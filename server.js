@@ -6,6 +6,9 @@ const dotenv = require('dotenv');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+
 // Import routes
 const { router: userRoutes, authenticateToken } = require('./routes/userRoutes');
 const productRoutes = require('./routes/productRoutes');
@@ -26,7 +29,6 @@ app.use(express.json());
 
 // Middleware
 app.use(bodyParser.json());
-app.use(cors());
 app.use(cors({
   origin: 'http://localhost:3000', // Replace with your frontend URL
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
@@ -46,9 +48,6 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.log('MongoDB connection error:', err));
 
-// const { authenticateToken } = require('./routes/userRoutes');
-// console.log(authenticateToken)
-
 // Ensure that all routes are defined and properly exported in their respective files
 if (!userRoutes || !productRoutes || !orderRoutes) {
   console.error('One or more route modules are not defined.');
@@ -60,24 +59,12 @@ app.use('/api/users', userRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/cart', cartRoutes);
-// // Routes
-// app.use('/api/products', require('./routes/productRoutes'));
-// app.use('/api/users', require('./routes/userRoutes'));
-
-// // Protect orders routes with JWT authentication
-// app.use('/api/orders', authenticateToken, require('./routes/orderRoutes'));
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: 'Something went wrong!' });
 });
-
-// // Serve CSS files with correct MIME type
-// app.get('*.css', (req, res, next) => {
-//   res.set('Content-Type', 'text/css');
-//   next();
-// });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

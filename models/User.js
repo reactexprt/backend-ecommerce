@@ -25,7 +25,9 @@ const userSchema = new mongoose.Schema({
   },
   password: { type: String, required: true },
   isAdmin: { type: Boolean, default: false },
-  cart: [cartItemSchema]
+  cart: [cartItemSchema],
+  resetPasswordOTP: { type: String },
+  resetPasswordExpires: { type: Date },
 }, { timestamps: true });
 
 // Hash password before saving the user

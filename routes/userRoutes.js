@@ -2,8 +2,49 @@ const express = require('express');
 const router = express.Router();
 const { check, validationResult } = require('express-validator');
 const bcrypt = require('bcrypt');
+const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const nodemailer = require('nodemailer');
+const { google } = require('googleapis');
+const crypto = require('crypto');
+
+// Load the env variables
+dotenv.config();
+
+// Configure OAuth2 client
+const oAuth2Client = new google.auth.OAuth2(
+  process.env.CLIENT_ID,
+  process.env.CLIENT_SECRET,
+  'http://localhost'
+);
+
+oAuth2Client.setCredentials({
+  refresh_token: process.env.REFRESH_TOKEN
+});
+
+async function sendMail(mailOptions) {
+  try {
+    const accessToken = await oAuth2Client.getAccessToken();
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        type: 'OAuth2',
+        user: process.env.EMAIL,
+        clientId: process.env.CLIENT_ID,
+        clientSecret: process.env.CLIENT_SECRET,
+        refreshToken: process.env.REFRESH_TOKEN,
+        accessToken: accessToken.token
+      }
+    });
+
+    const result = await transporter.sendMail(mailOptions);
+    return result;
+  } catch (error) {
+    console.error('Error sending email:', error);
+    throw error;
+  }
+}
 
 // Middleware for JWT authentication
 function authenticateToken(req, res, next) {
@@ -88,9 +129,41 @@ router.get('/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// Reset password
-router.post('/reset-password', [
+// Request OTP for password reset
+router.post('/request-reset-password', async (req, res) => {
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    return res.status(404).json({ message: 'User not found' });
+  }
+
+  // Generate OTP
+  const otp = crypto.randomBytes(3).toString('hex');
+  user.resetPasswordOTP = otp;
+  user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+  await user.save();
+
+  // Send OTP email
+  const mailOptions = {
+    from: process.env.EMAIL,
+    to: user.email,
+    subject: 'Password Reset OTP',
+    text: `Your OTP for password reset is ${otp}`
+  };
+
+  try {
+    await sendMail(mailOptions);
+    res.status(200).json({ message: 'OTP sent to email' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error sending email', error: error.toString() });
+  }
+});
+
+// Verify OTP and reset password
+router.post('/verify-otp', [
   check('email').isEmail().withMessage('Please enter a valid email'),
+  check('otp').isLength({ min: 6 }).withMessage('OTP must be 6 characters long'),
   check('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
 ], async (req, res) => {
   const errors = validationResult(req);
@@ -98,24 +171,30 @@ router.post('/reset-password', [
     return res.status(400).json({ errors: errors.array() });
   }
   try {
-    const { email, newPassword } = req.body;
+    const { email, otp, newPassword } = req.body;
     const user = await User.findOne({ email });
+
     if (!user) {
       return res.status(400).json({ message: 'No user found with this email' });
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    await user.save();
+    if (user.resetPasswordOTP === otp && user.resetPasswordExpires > Date.now()) {
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      user.password = hashedPassword;
+      user.resetPasswordOTP = undefined;
+      user.resetPasswordExpires = undefined;
+      await user.save();
 
-    res.status(200).json({ message: 'Password reset successfully' });
+      res.status(200).json({ message: 'Password reset successfully' });
+    } else {
+      res.status(400).json({ message: 'Invalid OTP or OTP expired' });
+    }
   } catch (err) {
-    console.error('Error resetting password:', err);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error resetting password:' });
   }
 });
 
 module.exports = {
   router,
   authenticateToken
-}
+};
