@@ -4,7 +4,7 @@
 .env
 
 # Ignore node_modules directory
-node_modules/
+/node_modules
 
 # Ignore other files and directories
 .DS_Store
