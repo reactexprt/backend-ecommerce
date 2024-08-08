@@ -12,7 +12,7 @@ const crypto = require('crypto');
 // Load the env variables
 dotenv.config();
 
-// Configure OAuth2 client
+// TODO: Configure OAuth2 client
 const oAuth2Client = new google.auth.OAuth2(
   process.env.CLIENT_ID,
   process.env.CLIENT_SECRET,
@@ -191,6 +191,60 @@ router.post('/verify-otp', [
     }
   } catch (err) {
     res.status(500).json({ message: 'Error resetting password:' });
+  }
+});
+
+// ---------- Address Management Routes ------------------
+router.post('/addresses', authenticateToken, async (req, res) => {
+  const { label, flat, street, city, state, zip, country, isDefault } = req.body;
+  try {
+    const user = await User.findById(req.user.userId);
+    if (isDefault) {
+      user.addresses.forEach(address => address.isDefault = false);
+    }
+    user.addresses.push({ label, flat, street, city, state, zip, country, isDefault });
+    await user.save();
+    res.status(200).json(user.addresses);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/addresses', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('addresses');
+    res.status(200).json(user.addresses);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.delete('/addresses/:addressId', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    user.addresses = user.addresses.filter(address => address._id.toString() !== req.params.addressId);
+    await user.save();
+    res.status(200).json(user.addresses);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.put('/addresses/:addressId', authenticateToken, async (req, res) => {
+  const { label, flat, street, city, state, zip, country, isDefault } = req.body;
+  try {
+    const user = await User.findById(req.user.userId);
+    const address = user.addresses.id(req.params.addressId);
+    if (!address) return res.status(404).json({ message: 'Address not found' });
+
+    if (isDefault) {
+      user.addresses.forEach(address => address.isDefault = false);
+    }
+    Object.assign(address, { label, flat, street, city, state, zip, country, isDefault });
+    await user.save();
+    res.status(200).json(user.addresses);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

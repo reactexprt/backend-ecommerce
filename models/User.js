@@ -15,6 +15,17 @@ const cartItemSchema = new mongoose.Schema({
   }
 });
 
+const addressSchema = new mongoose.Schema({
+  label: { type: String, required: true },
+  flat: { type: String, required: true },
+  street: { type: String, required: true },
+  city: { type: String, required: true },
+  state: { type: String, required: true },
+  zip: { type: String, required: true },
+  country: { type: String, required: true },
+  isDefault: { type: Boolean, default: false },
+});
+
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   email: { 
@@ -26,6 +37,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   isAdmin: { type: Boolean, default: false },
   cart: [cartItemSchema],
+  addresses: [addressSchema],
   resetPasswordOTP: { type: String },
   resetPasswordExpires: { type: Date },
 }, { timestamps: true });
