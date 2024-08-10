@@ -23,10 +23,12 @@ const addressSchema = new mongoose.Schema({
   state: { type: String, required: true },
   zip: { type: String, required: true },
   country: { type: String, required: true },
+  phoneNumber: { type: String, required: true },
   isDefault: { type: Boolean, default: false },
 });
 
 const userSchema = new mongoose.Schema({
+  // TODO -- Update user name to full name, username not needed
   username: { type: String, required: true, unique: true },
   email: { 
     type: String, 

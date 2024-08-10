@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const User = require('../models/User');
-const { authenticateToken } = require('./userRoutes');
+const { router: userRoutes, authenticateToken } = require('./userRoutes');
 
 // Fetch the cart items from the database
 router.get('/', authenticateToken, async (req, res) => {
