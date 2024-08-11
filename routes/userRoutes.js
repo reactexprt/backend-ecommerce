@@ -197,13 +197,13 @@ router.post('/verify-otp', [
 
 // ---------- Address Management Routes ------------------
 router.post('/addresses', authenticateToken, async (req, res) => {
-  const { label, flat, street, city, state, zip, country, phoneNumber, isDefault } = req.body;
+  const { label, firstName, lastName, flat, street, city, state, zip, country, phoneNumber, isDefault } = req.body;
   try {
     const user = await User.findById(req.user.userId);
     if (isDefault) {
       user.addresses.forEach(address => address.isDefault = false);
     }
-    user.addresses.push({ label, flat, street, city, state, zip, country, phoneNumber, isDefault });
+    user.addresses.push({ label, firstName, lastName, flat, street, city, state, zip, country, phoneNumber, isDefault });
     await user.save();
     res.status(200).json(user.addresses);
   } catch (err) {
@@ -232,7 +232,7 @@ router.delete('/addresses/:addressId', authenticateToken, async (req, res) => {
 });
 
 router.put('/addresses/:addressId', authenticateToken, async (req, res) => {
-  const { label, flat, street, city, state, zip, country, phoneNumber, isDefault } = req.body;
+  const { label, firstName, lastName, flat, street, city, state, zip, country, phoneNumber, isDefault } = req.body;
   try {
     const user = await User.findById(req.user.userId);
     const address = user.addresses.id(req.params.addressId);
@@ -241,7 +241,7 @@ router.put('/addresses/:addressId', authenticateToken, async (req, res) => {
     if (isDefault) {
       user.addresses.forEach(address => address.isDefault = false);
     }
-    Object.assign(address, { label, flat, street, city, state, zip, country, phoneNumber, isDefault });
+    Object.assign(address, { label, firstName, lastName, flat, street, city, state, zip, country, phoneNumber, isDefault });
     await user.save();
     res.status(200).json(user.addresses);
   } catch (err) {

@@ -62,8 +62,9 @@ app.post('/api/auth/google', async (req, res) => {
       audience: process.env.CLIENT_ID,
     });
     const payload = ticket.getPayload();
-    const username = payload['name'];
     const email = payload['email'];
+    // Extract the username from the email (everything before the @ symbol)
+    const username = email.split('@')[0];
     const googleId = payload['sub'];
     // Check if user exists in the database
     let user = await User.findOne({ email });
