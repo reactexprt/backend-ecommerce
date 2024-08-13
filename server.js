@@ -17,6 +17,7 @@ const cartRoutes = require('./routes/cartRoutes');
 
 // Load environment variables
 dotenv.config();
+const isProduction = process.env.NODE_ENV === 'production';
 
 // Check for required environment variables
 if (!process.env.MONGO_URI || !process.env.JWT_SECRET || !process.env.CLIENT_ID) {
@@ -28,7 +29,7 @@ const app = express();
 app.use(express.json());
 
 const corsOptions = {
-  origin: 'http://localhost:3000',
+  origin: isProduction ? 'https://master.d7l9cojoimj4e.amplifyapp.com' : 'http://localhost:3000',
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
   credentials: true,
   optionsSuccessStatus: 204
