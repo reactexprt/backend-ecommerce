@@ -27,14 +27,18 @@ if (!process.env.MONGO_URI || !process.env.JWT_SECRET || !process.env.CLIENT_ID)
 const app = express();
 app.use(express.json());
 
+const corsOptions = {
+  origin: 'http://localhost:3000',
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  credentials: true,
+  optionsSuccessStatus: 204
+};
+
 // Middleware
 app.use(bodyParser.json());
-app.use(cors({
-  origin: 'http://localhost:3000', // Replace with your frontend URL
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-  credentials: true, // Allow credentials (cookies, authorization headers, etc.)
-}));
+app.use(cors(corsOptions));
 app.use(helmet());
+app.options('*', cors(corsOptions));
 
 // Rate limiting
 const limiter = rateLimit({
