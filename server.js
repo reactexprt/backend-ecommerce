@@ -29,7 +29,7 @@ const app = express();
 app.use(express.json());
 
 const corsOptions = {
-  origin: isProduction ? 'https://master.d7l9cojoimj4e.amplifyapp.com' : 'http://localhost:3000',
+  origin: isProduction ? 'https://www.himalayanrasa.com' : 'http://localhost:3000',
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
   credentials: true,
   optionsSuccessStatus: 204
