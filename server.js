@@ -30,15 +30,18 @@ app.use(express.json());
 
 const corsOptions = {
   origin: isProduction ? 'https://www.himalayanrasa.com' : 'http://localhost:3000',
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   credentials: true,
-  optionsSuccessStatus: 204
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204  // Some legacy browsers (e.g., IE11) choke on 204
 };
 
 // Middleware
 app.use(bodyParser.json());
 app.use(cors(corsOptions));
 app.use(helmet());
+
+// Handle preflight requests for all routes
 app.options('*', cors(corsOptions));
 
 // Rate limiting
