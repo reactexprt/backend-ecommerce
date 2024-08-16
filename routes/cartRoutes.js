@@ -77,4 +77,18 @@ router.delete('/:productId', authenticateToken, async (req, res) => {
   }
 });
 
+router.post('/clear', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    user.cart = []; // Clear all items from the cart
+    await user.save();
+    res.status(200).json({ message: 'Cart cleared successfully' });
+  } catch (err) {
+    res.status(500).json({ message: 'Error clearing cart', error: err.message });
+  }
+});
+
 module.exports = router;

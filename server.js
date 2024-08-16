@@ -14,6 +14,8 @@ const { router: userRoutes, authenticateToken } = require('./routes/userRoutes')
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const cartRoutes = require('./routes/cartRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+
 
 // Load environment variables
 dotenv.config();
@@ -109,6 +111,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/cart', cartRoutes);
+app.use('/api', paymentRoutes);
 
 
 // Global Error Handling Middleware

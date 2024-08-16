@@ -123,7 +123,7 @@ router.post('/login', async (req, res) => {
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select('-password');
-    res.json(user);
+    res.json(user.email);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
