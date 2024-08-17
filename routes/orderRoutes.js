@@ -40,7 +40,7 @@ async function sendMail(mailOptions) {
 }
 
 router.post('/order', authenticateToken, async (req, res) => {
-  const { shippingAddress, cartItems, totalAmount } = req.body;
+  const { shippingAddress, cartItems, totalAmount, paymentStatus } = req.body;
 
   try {
     const user = await User.findById(req.user.userId);
@@ -49,6 +49,7 @@ router.post('/order', authenticateToken, async (req, res) => {
       userId: req.user.userId,
       products: cartItems.map(item => ({ productId: item.productId._id, quantity: item.quantity })),
       totalAmount,
+      paymentStatus,
       shippingAddress: `${shippingAddress.label}, ${shippingAddress.flat}, ${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state}, ${shippingAddress.zip}, ${shippingAddress.country}`
     });
 
@@ -56,7 +57,7 @@ router.post('/order', authenticateToken, async (req, res) => {
 
     const mailOptions = {
       from: process.env.EMAIL,
-      to: [user.email, 'lambabuoy@yahoo.com'].join(','),
+      to: [user.email, 'himalayanrasa@gmail.com'].join(','),
       subject: 'Order Confirmation',
       text: `
         Thank you for your order!

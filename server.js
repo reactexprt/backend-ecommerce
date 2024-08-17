@@ -4,6 +4,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const User = require('./models/User');
@@ -28,7 +29,6 @@ if (!process.env.MONGO_URI || !process.env.JWT_SECRET || !process.env.CLIENT_ID)
 }
 
 const app = express();
-app.use(express.json());
 
 const corsOptions = {
   origin: isProduction ? 'https://www.himalayanrasa.com' : 'http://localhost:3000',
@@ -39,9 +39,12 @@ const corsOptions = {
 };
 
 // Middleware
+app.use(express.json());
 app.use(bodyParser.json());
-app.use(cors(corsOptions));
 app.use(helmet());
+app.use(compression());
+
+app.use(cors(corsOptions));
 
 // Handle preflight requests for all routes
 app.options('*', cors(corsOptions));
@@ -58,7 +61,6 @@ app.use(limiter);
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.log('MongoDB connection error:', err));
-
 
 
 // Initialize the Google OAuth2 client got Single Sign in with Google
