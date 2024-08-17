@@ -56,10 +56,7 @@ router.post('/order', authenticateToken, async (req, res) => {
     await order.save();
 
     const mailOptions = {
-      from: {
-        email: process.env.EMAIL,
-        name:'Ħimalayan R̥asa'
-      },
+      from: process.env.EMAIL,
       to: [user.email, 'himalayanrasa@gmail.com'].join(','),
       subject: 'Order Confirmation',
       text: `
