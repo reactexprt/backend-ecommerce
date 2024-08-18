@@ -8,14 +8,15 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const User = require('./models/User');
-const { OAuth2Client } = require('google-auth-library'); // Import Google OAuth2 Client
-
+const { OAuth2Client } = require('google-auth-library');
+const { updateExpiredRefreshToken } = require('./utils/authUtils');
 // Import routes
 const { router: userRoutes, authenticateToken } = require('./routes/userRoutes');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const cartRoutes = require('./routes/cartRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const webauthnRoutes = require('./routes/webauthnRoute');
 
 
 // Load environment variables
@@ -52,7 +53,7 @@ app.options('*', cors(corsOptions));
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 150, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+  max: 200, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
 });
 app.use(limiter);
 
@@ -75,7 +76,6 @@ app.post('/api/auth/google', async (req, res) => {
     });
     const payload = ticket.getPayload();
     const email = payload['email'];
-    // Extract the username from the email (everything before the @ symbol)
     const username = email.split('@')[0];
     const googleId = payload['sub'];
     // Check if user exists in the database
@@ -89,17 +89,35 @@ app.post('/api/auth/google', async (req, res) => {
       });
       await user.save();
     }
+
     const authToken = jwt.sign(
       { userId: user._id, isAdmin: user.isAdmin }, 
       process.env.JWT_SECRET, 
       { expiresIn: '1h' }
     );
-    res.json({ authToken });
+
+    const refreshToken = jwt.sign(
+      { userId: user._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: '7d' }
+    );
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    res.json({ authToken, refreshToken, userId: user._id });
   } catch (error) {
     console.error('Error verifying Google ID token:', error);
     res.status(401).json({ message: 'Invalid Google ID token' });
   }
 });
+
+
+// Automatically retrieve a new refresh token
+updateExpiredRefreshToken()
+  .then((newRefreshToken) => {
+    console.log('New Refresh token obtained')
+  })
+  .catch(console.error);
 
 
 
@@ -110,10 +128,25 @@ if (!userRoutes || !productRoutes || !orderRoutes) {
 }
 // Use routes
 app.use('/api/users', userRoutes);
+app.use('/api/webauthn', webauthnRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api', paymentRoutes);
+
+// app.use(
+//   helmet.contentSecurityPolicy({
+//     directives: {
+//       defaultSrc: ["'self'"],
+//       scriptSrc: ["'self'", "https://trusted.cdn.com"],
+//       styleSrc: ["'self'", "'unsafe-inline'"],
+//       imgSrc: ["'self'", "data:", "https://trusted.cdn.com"],
+//       connectSrc: ["'self'", "https://api.yourservice.com"],
+//       frameSrc: ["'self'"],
+//       upgradeInsecureRequests: [],
+//     },
+//   })
+// );
 
 
 // Global Error Handling Middleware

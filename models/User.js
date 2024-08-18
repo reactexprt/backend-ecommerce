@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
+const WebAuthnCredentialSchema = new mongoose.Schema({
+  credentialID: String,
+  publicKey: String,
+  counter: Number,
+});
+
 const cartItemSchema = new mongoose.Schema({
   productId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -40,10 +46,14 @@ const userSchema = new mongoose.Schema({
   },
   password: { type: String, required: true },
   isAdmin: { type: Boolean, default: false },
+  biometricEnabled: { type: Boolean, default: false },
   cart: [cartItemSchema],
+  currentChallenge: { type: String },
   addresses: [addressSchema],
+  refreshToken: { type: String },
   resetPasswordOTP: { type: String },
   resetPasswordExpires: { type: Date },
+  webauthnCredentials: [WebAuthnCredentialSchema],
 }, { timestamps: true });
 
 // Hash password before saving the user

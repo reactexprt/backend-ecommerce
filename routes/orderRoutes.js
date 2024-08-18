@@ -2,22 +2,25 @@ const express = require('express');
 const router = express.Router();
 const { google } = require('googleapis');
 const nodemailer = require('nodemailer');
+const dotenv = require('dotenv');
 const Order = require('../models/Order');
 const User = require('../models/User');
+const { getStoredRefreshToken } = require('../utils/authUtils');
 const { router: userRoutes, authenticateToken } = require('./userRoutes');
 
-const oAuth2Client = new google.auth.OAuth2(
-  process.env.CLIENT_ID,
-  process.env.CLIENT_SECRET,
-  'http://localhost'
-);
-
-oAuth2Client.setCredentials({
-  refresh_token: process.env.REFRESH_TOKEN
-});
+dotenv.config();
 
 async function sendMail(mailOptions) {
   try {
+    const refreshToken = await getStoredRefreshToken('google');
+    const oAuth2Client = new google.auth.OAuth2(
+      process.env.CLIENT_ID,
+      process.env.CLIENT_SECRET,
+      'http://localhost'
+    );
+    oAuth2Client.setCredentials({
+      refresh_token: refreshToken
+    });
     const accessToken = await oAuth2Client.getAccessToken();
     const transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -26,7 +29,7 @@ async function sendMail(mailOptions) {
         user: process.env.EMAIL,
         clientId: process.env.CLIENT_ID,
         clientSecret: process.env.CLIENT_SECRET,
-        refreshToken: process.env.REFRESH_TOKEN,
+        refreshToken: refreshToken,
         accessToken: accessToken.token
       }
     });
@@ -57,7 +60,7 @@ router.post('/order', authenticateToken, async (req, res) => {
 
     const mailOptions = {
       from: process.env.EMAIL,
-      to: [user.email, 'himalayanrasa@gmail.com'].join(','),
+      to: [user.email, process.env.EMAIL].join(','),
       subject: 'Order Confirmation',
       text: `
         Thank you for your order!

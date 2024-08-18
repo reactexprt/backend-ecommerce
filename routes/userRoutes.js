@@ -8,23 +8,27 @@ const User = require('../models/User');
 const nodemailer = require('nodemailer');
 const { google } = require('googleapis');
 const crypto = require('crypto');
+const DOMPurify = require('dompurify');
+const { JSDOM } = require('jsdom');
+const { window } = new JSDOM('');
+const { getStoredRefreshToken } = require('../utils/authUtils');
+const purify = DOMPurify(window);
 
 // Load the env variables
 dotenv.config();
 
-// TODO: Configure OAuth2 client
-const oAuth2Client = new google.auth.OAuth2(
-  process.env.CLIENT_ID,
-  process.env.CLIENT_SECRET,
-  'http://localhost'
-);
-
-oAuth2Client.setCredentials({
-  refresh_token: process.env.REFRESH_TOKEN
-});
-
 async function sendMail(mailOptions) {
   try {
+    const refreshToken = await getStoredRefreshToken('google');
+    const oAuth2Client = new google.auth.OAuth2(
+      process.env.CLIENT_ID,
+      process.env.CLIENT_SECRET,
+      'http://localhost'
+    );
+
+    oAuth2Client.setCredentials({
+      refresh_token: refreshToken
+    });
     const accessToken = await oAuth2Client.getAccessToken();
     const transporter = nodemailer.createTransport({
       service: 'gmail',
@@ -33,7 +37,7 @@ async function sendMail(mailOptions) {
         user: process.env.EMAIL,
         clientId: process.env.CLIENT_ID,
         clientSecret: process.env.CLIENT_SECRET,
-        refreshToken: process.env.REFRESH_TOKEN,
+        refreshToken: refreshToken,
         accessToken: accessToken.token
       }
     });
@@ -112,12 +116,81 @@ router.post('/login', async (req, res) => {
       { expiresIn: '1h' }
     );
 
-    res.json({ token });
+    const refreshToken = jwt.sign(
+      { userId: user._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Save refresh token in the database
+    user.refreshToken = refreshToken;
+    await user.save();
+
+    // Set the userEmail cookie if biometric is true
+    if (user.biometricEnabled === true) {
+      const sanitizedEmail = purify.sanitize(req.body.email.trim());
+      res.cookie('userEmail', sanitizedEmail, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production', // Ensure this is true in production
+        sameSite: 'Strict',
+        maxAge: 5 * 365 * 24 * 60 * 60 * 1000, // 5 years in milliseconds
+      });
+    }
+
+    res.json({ token, refreshToken, userId: user._id });
   } catch (err) {
     console.error('Server error during login:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+router.post('/token', async (req, res) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(401).json({ message: 'Refresh Token is required' });
+  }
+
+  try {
+    // Verify the refresh token
+    const payload = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+
+    // Check if the refresh token matches the one in the database
+    const user = await User.findById(payload.userId);
+    if (!user || user.refreshToken !== refreshToken) {
+      return res.status(403).json({ message: 'Invalid Refresh Token' });
+    }
+
+    // Generate a new access token
+    const newAccessToken = jwt.sign(
+      { userId: user._id, isAdmin: user.isAdmin },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({ accessToken: newAccessToken });
+  } catch (err) {
+    console.error('Error during token refresh:', err);
+    return res.status(403).json({ message: 'Invalid or Expired Refresh Token' });
+  }
+});
+
+router.post('/logout', async (req, res) => {
+  const { userId } = req.body;
+
+  try {
+    const user = await User.findById(userId);
+    if (user) {
+      user.refreshToken = null; // Clear the refresh token
+      await user.save();
+    }
+    res.status(200).json({ message: 'Logged out successfully' });
+  } catch (err) {
+    console.error('Error during logout:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 
 // Get user profile (Protected route)
 router.get('/profile', authenticateToken, async (req, res) => {
@@ -128,6 +201,42 @@ router.get('/profile', authenticateToken, async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+// Enable Biometric
+router.post('/enable-biometric', async (req, res) => {
+  const { email } = req.body;
+  try {
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.biometricEnabled = true;
+    await user.save();
+    res.status(200).json({ message: 'Biometric login enabled successfully' });
+  } catch (err) {
+    console.error('Error enabling biometric login:', err);
+    res.status(500).json({ message: 'Error enabling biometric login' });
+  }
+});
+
+router.get('/biometric-status', async (req, res) => {
+  let { email } = req.query;
+  try {
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json({ biometricEnabled: user.biometricEnabled });
+  } catch (err) {
+    console.error('Error fetching biometric status:', err);
+    res.status(500).json({ message: 'Error fetching biometric status' });
+  }
+});
+
+
 
 // Request OTP for password reset
 router.post('/request-reset-password', async (req, res) => {
