@@ -87,6 +87,7 @@ router.post('/register', async (req, res) => {
     await user.save();
     // Set a long-lived, secure, HttpOnly cookie for the user's email (5 years)
     res.cookie('userEmail', sanitizedEmail, {
+      domain: '.himalayanrasa.com',
       httpOnly: false,
       secure: process.env.NODE_ENV === 'production', // Ensure this is true in production
       sameSite: 'Strict',

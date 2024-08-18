@@ -130,6 +130,7 @@ router.post('/login', async (req, res) => {
     if (user.biometricEnabled === true) {
       const sanitizedEmail = purify.sanitize(req.body.email.trim());
       res.cookie('userEmail', sanitizedEmail, {
+        domain: '.himalayanrasa.com',
         httpOnly: false,
         secure: process.env.NODE_ENV === 'production', // Ensure this is true in production
         sameSite: 'Strict',
