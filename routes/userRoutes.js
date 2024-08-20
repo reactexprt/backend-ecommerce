@@ -50,19 +50,29 @@ async function sendMail(mailOptions) {
   }
 }
 
-// Middleware for JWT authentication
 function authenticateToken(req, res, next) {
   const token = req.header('Authorization')?.split(' ')[1];
-  if (!token) return res.status(401).json({ message: 'Access denied' });
+  
+  if (!token) {
+    return res.status(401).json({ message: 'Access denied' }); // No token, return 401
+  }
 
   try {
     const verified = jwt.verify(token, process.env.JWT_SECRET);
     req.user = verified;
     next();
   } catch (err) {
-    res.status(400).json({ message: 'Invalid token' });
+    // Check the specific error message for better error handling
+    if (err.name === 'JsonWebTokenError') {
+      return res.status(401).json({ message: 'Invalid token' }); // Invalid token, return 401
+    } else if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Expired token' }); // Expired token, return 401
+    } else {
+      return res.status(400).json({ message: 'Bad Request' }); // Generic 400 for other cases
+    }
   }
 }
+
 
 // Register a new user
 router.post('/register', [
