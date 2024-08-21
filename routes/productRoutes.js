@@ -4,7 +4,7 @@ const Product = require('../models/Product');
 const { router: userRoutes, authenticateToken } = require('./userRoutes');
 
 // Get all products
-router.get('/', authenticateToken, async (req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
     const products = await Product.find();
     res.json(products);
