@@ -13,15 +13,21 @@ dotenv.config();
 async function sendMail(mailOptions) {
   try {
     const refreshToken = await getStoredRefreshToken('google');
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
     const oAuth2Client = new google.auth.OAuth2(
-      process.env.CLIENT_ID,
-      process.env.CLIENT_SECRET,
+      process.env.CLIENT_ID, 
+      process.env.CLIENT_SECRET, 
       'http://localhost'
     );
-    oAuth2Client.setCredentials({
+    oAuth2Client.setCredentials({ 
       refresh_token: refreshToken
     });
     const accessToken = await oAuth2Client.getAccessToken();
+    if (!accessToken || !accessToken.token) {
+      throw new Error('Failed to retrieve access token');
+    }
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -34,11 +40,9 @@ async function sendMail(mailOptions) {
       }
     });
 
-    const result = await transporter.sendMail(mailOptions);
-    return result;
+    await transporter.sendMail(mailOptions);
   } catch (error) {
     console.error('Error sending email:', error);
-    throw error;
   }
 }
 
@@ -47,9 +51,8 @@ router.post('/order', authenticateToken, async (req, res) => {
 
   try {
     const user = await User.findById(req.user.userId);
-
     const order = new Order({
-      userId: req.user.userId,
+      userId: user._id,
       products: cartItems.map(item => ({ productId: item.productId._id, quantity: item.quantity })),
       totalAmount,
       paymentStatus,
@@ -60,7 +63,7 @@ router.post('/order', authenticateToken, async (req, res) => {
 
     const mailOptions = {
       from: process.env.EMAIL,
-      to: [user.email, process.env.EMAIL].join(','),
+      to: user.email,
       subject: 'Order Confirmation',
       text: `
         Thank you for your order!
@@ -70,12 +73,13 @@ router.post('/order', authenticateToken, async (req, res) => {
       `
     };
 
-    await sendMail(mailOptions);
-    res.status(200).json({ message: 'Order confirmed and email sent', order });
+    // Send mail asynchronously
+    sendMail(mailOptions).catch(console.error);
+
+    res.status(200).json({ message: 'Order confirmed', order });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error });
   }
 });
 
 module.exports = router;
-

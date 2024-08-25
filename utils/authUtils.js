@@ -50,7 +50,7 @@ async function updateExpiredRefreshToken() {
             console.error('Refresh token is invalid or expired. User needs to re-authenticate.');
             // Prompt user to re-authenticate or handle the situation as needed
         } else {
-            console.error('Failed in refreshing refresh token:', error);
+            console.error('Failed in refreshing refresh token:');
             throw error;
         }
     }
