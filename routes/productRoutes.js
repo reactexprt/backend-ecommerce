@@ -1,42 +1,32 @@
 const express = require('express');
 const router = express.Router();
-const fs = require('fs');
+const dotenv = require('dotenv');
 const multer = require('multer');
 const expressSanitizer = require('express-sanitizer');
 const path = require('path');
 const { check, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const User = require('../models/User');
 const Product = require('../models/Product');
 const { router: userRoutes, authenticateToken } = require('./userRoutes');
 const NodeCache = require('node-cache');
 const productCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 }); // Cache TTL set to 1 hour, check every 2 minutes
 
-// Multer setup for file uploads with file type validation
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const categoryDir = path.join(__dirname, '../uploads', req.body.category);
-    const productDir = path.join(categoryDir, req.body.name);
+dotenv.config();
 
-    // Create the category directory if it doesn't exist
-    if (!fs.existsSync(categoryDir)) {
-      fs.mkdirSync(categoryDir);
-    }
-
-    // Create the product directory if it doesn't exist
-    if (!fs.existsSync(productDir)) {
-      fs.mkdirSync(productDir);
-    }
-
-    // Set the destination to the product directory
-    cb(null, productDir);
+// Initialize S3 Client
+const s3 = new S3Client({
+  region: 'ap-south-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY,
+    secretAccessKey: process.env.AWS_SECRET_KEY,
   },
-  filename: function (req, file, cb) {
-    cb(null, `${Date.now()}-${file.originalname}`); // Generate a unique filename
-  }
 });
 
+// Multer setup for file uploads with memory storage
+const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   fileFilter: function (req, file, cb) {
@@ -52,10 +42,29 @@ const upload = multer({
   }
 });
 
+const uploadToS3 = async (file, category, productName) => {
+  const params = {
+    Bucket: 'himalayanrasa-product-images', // Replace with your bucket name
+    Key: `uploads/${category}/${productName}/${Date.now()}-${file.originalname}`, // File path in S3
+    Body: file.buffer,
+    ContentType: file.mimetype,
+    // ACL: 'public-read' // Remove this line since ACLs are not allowed
+  };
+
+  try {
+    const command = new PutObjectCommand(params);
+    const data = await s3.send(command);
+    return { Location: `https://${params.Bucket}.s3.${await s3.config.region()}.amazonaws.com/${params.Key}` };
+  } catch (err) {
+    console.error("Error uploading file to S3:", err);
+    throw err;
+  }
+};
+
 // Rate limiter middleware
 const productLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window
-  max: 30, // Limit each IP to 30 requests per windowMs
+  max: 500, // Limit each IP to 30 requests per windowMs
   message: 'Too many requests from this IP, please try again after a minute'
 });
 
@@ -140,11 +149,12 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      // Since multer already handles file paths, we simply get the paths from req.files
-      const imagePaths = req.files.map(file => {
-        const relativePath = file.path.replace(path.join(__dirname, '../'), '');
-        return `${req.protocol}://${req.get('host')}/${relativePath}`;
-      });
+      // Upload files to S3 and store their URLs
+      const imageUploadPromises = req.files.map(file =>
+        uploadToS3(file, req.body.category.trim(), req.body.name.trim())
+      );
+      const uploadedImages = await Promise.all(imageUploadPromises);
+      const imagePaths = uploadedImages.map(data => data.Location);
 
       const sanitizedData = {
         name: req.body.name.trim(),

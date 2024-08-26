@@ -19,7 +19,6 @@ const cartRoutes = require('./routes/cartRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const webauthnRoutes = require('./routes/webauthnRoute');
 
-
 // Load environment variables
 dotenv.config();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -121,7 +120,6 @@ updateExpiredRefreshToken()
   .catch(console.error);
 
 
-
 // Ensure that all routes are defined and properly exported in their respective files
 if (!userRoutes || !productRoutes || !orderRoutes) {
   console.error('One or more route modules are not defined.');
@@ -134,33 +132,6 @@ app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api', paymentRoutes);
-
-// Serve static files from the 'uploads' directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
-  setHeaders: (res, path, stat) => {
-    const origin = res.req.headers.origin;
-
-    if (origin) {
-      if (allowedOrigins.includes(origin) || origin.endsWith('.himalayanrasa.com')) {
-        res.set('Access-Control-Allow-Origin', origin);
-        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-      } else if (origin === 'http://localhost:3000') {
-        // Explicitly allow localhost:3000 for development
-        res.set('Access-Control-Allow-Origin', 'http://localhost:3000');
-        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-      }
-    } else {
-      // Optionally handle the case where there is no origin (e.g., non-browser requests)
-      res.set('Access-Control-Allow-Origin', '*');
-      res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-    }
-
-    res.set('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
-    res.set('Access-Control-Allow-Methods', 'GET');
-  }
-}));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
 
 // app.use(
 //   helmet.contentSecurityPolicy({
