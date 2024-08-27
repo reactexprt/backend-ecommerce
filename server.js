@@ -2,7 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const path = require('path');
+const crypto = require('crypto');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -81,11 +81,12 @@ app.post('/api/auth/google', async (req, res) => {
     // Check if user exists in the database
     let user = await User.findOne({ email });
     if (!user) {
+      const randomPassword = crypto.randomBytes(32).toString('hex');
       user = new User({
         googleId: googleId,
         email: email,
         username: username,
-        password: 'NotRequiredForGoogleSignIn'
+        password: randomPassword
       });
       await user.save();
     }
