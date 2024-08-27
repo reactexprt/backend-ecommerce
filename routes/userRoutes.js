@@ -175,36 +175,62 @@ router.post('/login', async (req, res) => {
 
 router.post('/token', async (req, res) => {
   const { refreshToken } = req.body;
-
   if (!refreshToken) {
     return res.status(401).json({ message: 'Refresh token is required.' });
   }
-
   try {
+    // Verify the current refresh token
     const payload = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
 
-    // Use an indexed field for faster lookup and ensure the refreshToken is checked
-    const user = await User.findOne({ _id: payload.userId, refreshToken: refreshToken }).exec();
+    // Find the user with the provided refresh token
+    let user = await User.findOne({ _id: payload.userId, refreshToken: refreshToken }).exec();
 
     if (!user) {
       return res.status(403).json({ message: 'Invalid refresh token.' });
     }
 
+    // Check if the refresh token has expired
+    const tokenExpirationDate = new Date(payload.exp * 1000);
+    const currentDate = new Date();
+
+    let newRefreshToken = refreshToken;
+
+    if (tokenExpirationDate <= currentDate) {
+      // Generate a new refresh token if the old one has expired
+      newRefreshToken = jwt.sign(
+        { userId: user._id },
+        process.env.REFRESH_TOKEN_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      // Update the refresh token in the database
+      user = await User.findOneAndUpdate(
+        { _id: user._id },
+        { $set: { refreshToken: newRefreshToken } },
+        { new: true }
+      ).exec();
+    }
+
+    // Create a new access token
     const newAccessToken = jwt.sign(
       { userId: user._id, isAdmin: user.isAdmin },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    res.json({ accessToken: newAccessToken });
+    // Send the new access token and the appropriate refresh token (new or old) to the client
+    res.json({ accessToken: newAccessToken, refreshToken: newRefreshToken });
   } catch (err) {
-    if (err instanceof jwt.JsonWebTokenError) {
-      return res.status(403).json({ message: 'Invalid or expired refresh token.' });
+    if (err instanceof jwt.TokenExpiredError) {
+      return res.status(403).json({ message: 'Expired refresh token.' });
+    } else if (err instanceof jwt.JsonWebTokenError) {
+      return res.status(403).json({ message: 'Invalid refresh token.' });
     }
     console.error('Error during token refresh:', err);
     return res.status(500).json({ message: 'Server error during token refresh.' });
   }
 });
+
 
 router.post('/logout', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
