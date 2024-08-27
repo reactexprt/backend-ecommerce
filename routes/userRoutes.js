@@ -206,7 +206,7 @@ router.post('/token', async (req, res) => {
   }
 });
 
-router.post('/logout', async (req, res) => {
+router.post('/logout', authenticateToken, async (req, res) => {
   const userId = req.user.userId;
   try {
     // No need to check if user exists; just attempt to unset the token
