@@ -5,95 +5,136 @@ const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const { authenticateToken } = require('./userRoutes');
 
-// A utility function to check if a string is a valid ObjectId
-function isValidObjectId(id) {
-  return mongoose.Types.ObjectId.isValid(id) && new mongoose.Types.ObjectId(id).toString() === id;
-}
 
-// Fetch the cart items from the database
 // Example of ensuring a cart exists whenever needed
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    let cart = await Cart.findOne({ user: req.user.userId }).populate('items.productId');
+    // Optimize the query by projecting only the necessary fields
+    let cart = await Cart.findOne({ user: req.user.userId })
+      .populate('items.productId', 'name price images') // Populate only necessary fields
+      .exec();
+
     if (!cart) {
       // Initialize a new empty cart if none found
       cart = new Cart({ user: req.user.userId, items: [] });
-      await cart.save();  // Optionally save the new empty cart
-      return res.json(cart.items);  // Return an empty cart
+      await cart.save(); // Optionally save the new empty cart to the database
+      return res.status(200).json(cart.items); // Return an empty cart with a 200 status
     }
-    res.json(cart.items);
+
+    res.status(200).json(cart.items); // Return the cart items with a 200 status
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('Error fetching cart:', err);
+    res.status(500).json({ message: 'Error fetching cart' }); // Improved error message for better clarity
   }
 });
 
-
-// Save or update the cart in the database
+// Update and save cart
 router.post('/', authenticateToken, async (req, res) => {
   const { userId } = req.user;
   const { productId, quantity } = req.body;
+  if (!productId || !quantity || quantity <= 0) {
+    return res.status(400).json({ message: 'Product ID and a positive quantity are required.' });
+  }
 
   try {
-    const update = {
-      $addToSet: {
-        items: {
-          $each: [{ productId, quantity }],
-          $not: { productId }
-        }
-      }
-    };
-
-    // Find item first to decide if we need to $addToSet or $inc
-    let cart = await Cart.findOne({ user: userId, "items.productId": productId });
-
-    if (cart && cart.items.some(item => item.productId.equals(productId))) {
-      // If item exists, increment its quantity
-      update.$inc = { "items.$.quantity": quantity };
-      delete update.$addToSet;
+    // Use transactions for ensuring consistency in concurrent scenarios
+    const session = await Cart.startSession();
+    session.startTransaction();
+    // Find the cart with the specific item
+    let cart = await Cart.findOne({ user: userId }).session(session);
+    if (!cart) {
+      // If no cart exists, create one
+      cart = new Cart({ user: userId, items: [] });
     }
-
-    await Cart.updateOne({ user: userId }, update, { upsert: true });
-    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId');
+    const existingItemIndex = cart.items.findIndex(item => item.productId.equals(productId));
+    if (existingItemIndex !== -1) {
+      // If item exists, increment its quantity
+      cart.items[existingItemIndex].quantity += quantity;
+    } else {
+      // If item does not exist, add it to the cart
+      cart.items.push({ productId, quantity });
+    }
+    // Save the updated cart with session to ensure atomicity
+    await cart.save({ session });
+    // Commit the transaction to finalize changes
+    await session.commitTransaction();
+    session.endSession();
+    // Populate the cart items with necessary fields from product
+    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId', 'name price images');
     res.status(201).json(updatedCart.items);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('Error updating cart:', err);
+    // If an error occurs during the transaction, abort it
+    if (session && session.inTransaction()) {
+      await session.abortTransaction();
+      session.endSession();
+    }
+    res.status(500).json({ message: 'Error updating cart' });
   }
 });
 
 // Update cart item quantity
 router.put('/:productId', authenticateToken, async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const userId = req.user.userId;
-    const productId = new mongoose.Types.ObjectId(req.params.productId); // Ensure proper ObjectId conversion
+    const productId = new mongoose.Types.ObjectId(req.params.productId);
     const { quantity } = req.body;
 
-    // Use the $set operator to directly update the item quantity in the array
-    const updateResult = await Cart.updateOne(
-      { user: userId, 'items.productId': productId },
-      { $set: { 'items.$.quantity': quantity } }
-    );
-
-    if (updateResult.matchedCount === 0) {
-      return res.status(404).json({ message: 'Cart or item not found' });
+    if (!quantity || quantity <= 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: 'Quantity must be a positive number' });
     }
 
-    // Fetch the updated cart to return to the client
-    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId');
-    res.json(updatedCart.items);
+    // Ensure there are no ongoing transactions before proceeding
+    const cart = await Cart.findOne({ user: userId }).session(session);
+    if (!cart) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: 'Cart not found' });
+    }
+
+    const itemIndex = cart.items.findIndex(item => item.productId.equals(productId));
+    if (itemIndex === -1) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: 'Item not found in cart' });
+    }
+
+    cart.items[itemIndex].quantity = quantity;
+    await cart.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId', 'name price images');
+    res.status(200).json(updatedCart.items);
+
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    session.endSession();
+    console.error('Error updating cart item quantity:', err);
+    res.status(500).json({ message: 'Error updating cart item quantity' });
   }
 });
 
-
 // Remove from cart
 router.delete('/:productId', authenticateToken, async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const userId = req.user.userId;
     const productId = req.params.productId;
 
     // Validate productId is a valid ObjectId
     if (!mongoose.Types.ObjectId.isValid(productId)) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({ message: 'Invalid product ID' });
     }
 
@@ -102,18 +143,30 @@ router.delete('/:productId', authenticateToken, async (req, res) => {
     // Use the $pull operator to directly remove the item from the array
     const updateResult = await Cart.updateOne(
       { user: userId },
-      { $pull: { items: { productId: objectId } } }
+      { $pull: { items: { productId: objectId } } },
+      { session } // Ensure this operation is part of the transaction
     );
 
     if (updateResult.modifiedCount === 0) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({ message: 'Cart not found or item not found in cart' });
     }
 
-    // Fetch the updated cart to return to the client
-    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId');
-    res.json(updatedCart.items);
+    // Fetch the updated cart within the same session to ensure consistency
+    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId', 'name price images').session(session);
+
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(200).json(updatedCart.items);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+      session.endSession();
+    }
+    console.error('Error deleting cart item:', err);
+    res.status(500).json({ message: 'Error deleting cart item' });
   }
 });
 
@@ -171,17 +224,33 @@ router.post('/merge', authenticateToken, async (req, res) => {
 
 // Clear the cart
 router.post('/clear', authenticateToken, async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    const cart = await Cart.findOne({ user: req.user.userId });
+    const cart = await Cart.findOne({ user: req.user.userId }).session(session);
+
     if (!cart) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({ message: 'Cart not found' });
     }
+
     cart.items = []; // Clear all items from the cart
-    await cart.save();
+    await cart.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
     res.status(200).json({ message: 'Cart cleared successfully' });
   } catch (err) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    session.endSession();
     res.status(500).json({ message: 'Error clearing cart', error: err.message });
   }
 });
+
 
 module.exports = router;

@@ -1,6 +1,8 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const { google } = require('googleapis');
+const rateLimit = require('express-rate-limit');
 const nodemailer = require('nodemailer');
 const dotenv = require('dotenv');
 const Order = require('../models/Order');
@@ -9,6 +11,13 @@ const { getStoredRefreshToken } = require('../utils/authUtils');
 const { router: userRoutes, authenticateToken } = require('./userRoutes');
 
 dotenv.config();
+
+// Rate limiter middleware to prevent abuse of the order endpoint
+const orderLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many orders from this IP, please try again later'
+});
 
 async function sendMail(mailOptions) {
   try {
@@ -46,21 +55,43 @@ async function sendMail(mailOptions) {
   }
 }
 
-router.post('/order', authenticateToken, async (req, res) => {
-  const { shippingAddress, cartItems, totalAmount, paymentStatus } = req.body;
+router.post('/order', [authenticateToken, orderLimiter], async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
   try {
-    const user = await User.findById(req.user.userId);
-    const order = new Order({
+    const { shippingAddress, cartItems, totalAmount, paymentStatus } = req.body;
+
+    // Fetch the user in a lean way to improve performance
+    const user = await User.findById(req.user.userId).select('_id email').lean().exec();
+
+    if (!user) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Prepare the order data
+    const orderData = {
       userId: user._id,
-      products: cartItems.map(item => ({ productId: item.productId._id, quantity: item.quantity })),
+      products: cartItems.map(item => ({
+        productId: mongoose.Types.ObjectId(item.productId._id),
+        quantity: item.quantity
+      })),
       totalAmount,
       paymentStatus,
       shippingAddress: `${shippingAddress.label}, ${shippingAddress.flat}, ${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state}, ${shippingAddress.zip}, ${shippingAddress.country}`
-    });
+    };
 
-    await order.save();
+    // Create and save the order atomically within the session
+    const order = new Order(orderData);
+    await order.save({ session });
 
+    // Commit the transaction
+    await session.commitTransaction();
+    session.endSession();
+
+    // Prepare the mail options
     const mailOptions = {
       from: process.env.EMAIL,
       to: user.email,
@@ -73,13 +104,20 @@ router.post('/order', authenticateToken, async (req, res) => {
       `
     };
 
-    // Send mail asynchronously
+    // Send mail asynchronously (non-blocking)
     sendMail(mailOptions).catch(console.error);
 
     res.status(200).json({ message: 'Order confirmed', order });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error });
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    session.endSession();
+
+    console.error('Error processing order:', error);
+    res.status(500).json({ message: 'Server error processing order', error });
   }
 });
+
 
 module.exports = router;
