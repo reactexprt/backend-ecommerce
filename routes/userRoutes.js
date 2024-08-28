@@ -33,28 +33,6 @@ const loginLimiter = rateLimit({
   message: 'Too many login attempts from this IP, please try again later'
 });
 
-// User login function
-const loginUser = async (email, password, session) => {
-  if (!email || !password) {
-    throw new Error('Email and password must be provided');
-  }
-  try {
-    // Ensure the query is part of the session
-    const user = await User.findOne({ email }).select('email password').session(session).exec();
-    if (!user) {
-      throw new Error('Email not found');
-    }
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      throw new Error('Incorrect password');
-    }
-    return user;
-  } catch (error) {
-    console.error('Login error:', error);
-    throw error; // Rethrowing the error to handle it or log it appropriately in the calling context
-  }
-};
-
 const generateTokens = (user) => {
   const token = jwt.sign(
     { userId: user._id, isAdmin: user.isAdmin },
@@ -176,9 +154,13 @@ router.post('/login', loginLimiter, async (req, res) => {
 
   try {
     const { email, password } = req.body;
+    
+    if (!email || !password) {
+      throw new Error('Email and password must be provided');
+    }
 
     // Use findOneAndUpdate to authenticate and update the refreshToken in one step
-    const user = await User.findOne({ email }).select('email password refreshToken biometricEnabled').session(session);
+    const user = await User.findOne({ email }).select('email password refreshToken biometricEnabled').session(session).exec();
 
     if (!user) {
       throw new Error('Email not found');
