@@ -281,7 +281,7 @@ router.post('/token', tokenRateLimiter, async (req, res) => {
     });
 
     // Send the new access token to the client
-    res.json({ accessToken: newAccessToken });
+    res.status(200).json({ accessToken: newAccessToken, userId: user._id });
   } catch (err) {
     await session.abortTransaction();
     session.endSession();

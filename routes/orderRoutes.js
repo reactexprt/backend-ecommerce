@@ -75,7 +75,7 @@ router.post('/order', [authenticateToken, orderLimiter], async (req, res) => {
     const orderData = {
       userId: user._id,
       products: cartItems.map(item => ({
-        productId: mongoose.Types.ObjectId(item.productId._id),
+        productId: new mongoose.Types.ObjectId(item.productId._id),
         quantity: item.quantity
       })),
       totalAmount,
