@@ -55,6 +55,9 @@ async function sendMail(mailOptions) {
   }
 }
 
+// @route   POST /api/orders/order
+// @desc    Post orders of the authenticated user
+// @access  Private
 router.post('/order', [authenticateToken, orderLimiter], async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -118,6 +121,41 @@ router.post('/order', [authenticateToken, orderLimiter], async (req, res) => {
     res.status(500).json({ message: 'Server error processing order', error });
   }
 });
+
+// @route   GET /api/orders/previous
+// @desc    Get previous orders of the authenticated user
+// @access  Private
+// routes/orders.js
+router.get('/previous', authenticateToken, async (req, res) => {
+  const limit = parseInt(req.query.limit) || 5; // Default limit is 5
+  const page = parseInt(req.query.page) || 1;  // Default page is 1
+
+  try {
+    // Count total orders for the user
+    const totalOrders = await Order.countDocuments({ userId: req.user.userId });
+
+    // Fetch the orders for the current page
+    const orders = await Order.find({ userId: req.user.userId })
+      .sort({ createdAt: -1 }) // Sort orders by newest first
+      .populate('products.productId', 'name price images') // Populate product details
+      .skip((page - 1) * limit) // Skip the previous orders according to the page
+      .limit(limit) // Limit the number of orders fetched
+      .exec();
+
+    // Calculate total pages
+    const totalPages = Math.ceil(totalOrders / limit);
+
+    res.status(200).json({ 
+      orders, 
+      currentPage: page,
+      totalPages 
+    });
+  } catch (error) {
+    console.error('Error fetching orders:', error.message);
+    res.status(500).json({ error: 'Server Error' });
+  }
+});
+
 
 
 module.exports = router;
