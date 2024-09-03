@@ -68,7 +68,7 @@ router.post('/read', authenticateToken, async (req, res) => {
             return res.status(404).json({ message: 'Notification not found' });
         }
 
-        if (notification.userId.toString() !== req.user._id.toString()) {
+        if (notification.userId.toString() !== req.user.userId.toString()) {
             return res.status(403).json({ message: 'Not authorized' });
         }
 
