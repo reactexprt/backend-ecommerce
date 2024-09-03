@@ -4,6 +4,7 @@ const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const dotenv = require('dotenv')
 const rateLimit = require('express-rate-limit');
+const { router: userRoutes, authenticateToken } = require('./userRoutes');
 
 const router = express.Router();
 
@@ -22,7 +23,7 @@ const limiter = rateLimit({
   message: 'Too many order creation attempts from this IP, please try again later'
 });
 
-router.post('/create-razorpay-order', limiter, async (req, res) => {
+router.post('/create-razorpay-order', [authenticateToken, limiter], async (req, res) => {
   const { amount } = req.body; // amount in paise (100 INR = 10000 paise)
 
   // Input validation
@@ -53,7 +54,7 @@ router.post('/create-razorpay-order', limiter, async (req, res) => {
 });
 
 // Verify Razorpay payment
-router.post('/verify-razorpay-payment', limiter, (req, res) => {
+router.post('/verify-razorpay-payment', [authenticateToken, limiter], (req, res) => {
   const { orderCreationId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
 
   // Validate input

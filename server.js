@@ -19,6 +19,7 @@ const orderRoutes = require('./routes/orderRoutes');
 const cartRoutes = require('./routes/cartRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const webauthnRoutes = require('./routes/webauthnRoute');
+const wishlistRoutes = require('./routes/wishlistRoutes');
 
 
 // Load environment variables
@@ -175,7 +176,8 @@ app.use('/api/webauthn', webauthnRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/cart', cartRoutes);
-app.use('/api', paymentRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/payment', paymentRoutes);
 
 // app.use(
 //   helmet.contentSecurityPolicy({

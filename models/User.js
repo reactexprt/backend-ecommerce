@@ -34,6 +34,7 @@ const userSchema = new mongoose.Schema({
   biometricEnabled: { type: Boolean, default: false },
   currentChallenge: { type: String },
   addresses: [addressSchema],
+  wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }], 
   refreshToken: { type: String },
   resetPasswordOTP: { type: String },
   resetPasswordExpires: { type: Date },
