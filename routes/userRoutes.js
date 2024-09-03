@@ -354,10 +354,6 @@ router.get('/user-details', authenticateToken, async (req, res) => {
   }
 });
 
-module.exports = router;
-
-
-
 // ---------------- Biometric Routes --------------------
 router.post('/enable-biometric', async (req, res) => {
   const { email } = req.body;
