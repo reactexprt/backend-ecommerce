@@ -343,6 +343,31 @@ router.get('/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// PUT: Update User Profile
+router.put('/profile', authenticateToken, async (req, res) => {
+  const { username } = req.body;
+  const userId = req.user.userId;
+
+  try {
+    // Update the username directly
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { username },  // Update only the username field
+      { new: true, runValidators: true, select: 'username' }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.status(200).json({ message: 'Username updated successfully', username: user.username });
+  } catch (err) {
+    console.error('Error updating username:', err);
+    res.status(500).json({ message: 'Server error updating username' });
+  }
+});
+
+
 router.get('/user-details', authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select('-password -refreshToken -resetPasswordOTP -resetPasswordExpires -webauthnCredentials');
@@ -353,6 +378,8 @@ router.get('/user-details', authenticateToken, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+
 
 // ---------------- Biometric Routes --------------------
 router.post('/enable-biometric', async (req, res) => {
@@ -406,16 +433,17 @@ router.get('/biometric-status', tokenRateLimiter, async (req, res) => {
 
 
 
-// ----------------Reset password and verify otp -------------
+// ---------------- Reset, Change password and verify otp -------------
 // Verify OTP and reset password
 // Rate limiter middleware to prevent brute-force attacks
-const otpRateLimiter = rateLimit({
+// Apply rate limiting to the password change route
+const changePasswordLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // Limit each IP to 5 requests per windowMs
-  message: 'Too many OTP verification attempts or OTP Requests from this IP, please try again later'
+  message: 'Too many password change attempts, please try again later.'
 });
 
-router.post('/verify-otp', otpRateLimiter, [
+router.post('/verify-otp', changePasswordLimiter, [
   check('email').isEmail().withMessage('Please enter a valid email'),
   check('otp').isLength({ min: 6 }).withMessage('OTP must be 6 characters long'),
   check('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
@@ -461,7 +489,7 @@ router.post('/verify-otp', otpRateLimiter, [
 });
 
 // Reset Password
-router.post('/request-reset-password', otpRateLimiter, async (req, res) => {
+router.post('/request-reset-password', changePasswordLimiter, async (req, res) => {
   const { email } = req.body;
   if (!email) {
     return res.status(400).json({ message: 'Email is required' });
@@ -523,6 +551,49 @@ router.post('/request-reset-password', otpRateLimiter, async (req, res) => {
     session.endSession();
     console.error('Error handling reset password request:', error);
     res.status(500).json({ message: 'Error processing request' });
+  }
+});
+
+router.post('/change-password', authenticateToken, changePasswordLimiter, [
+  check('oldPassword').isLength({ min: 6 }).withMessage('Old password is required'),
+  check('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters long')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const { oldPassword, newPassword } = req.body;
+  const userId = req.user.userId;
+
+  try {
+    // Fetch the user with the current password
+    const user = await User.findById(userId).select('password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Compare the old password
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Incorrect old password' });
+    }
+
+    // Check if the new password is different from the old one
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({ message: 'New password must be different from the old password' });
+    }
+
+    // Hash the new password and update it
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedNewPassword;
+    await user.save();
+
+    res.status(200).json({ message: 'Password changed successfully' });
+  } catch (err) {
+    console.error('Error changing password:', err);
+    res.status(500).json({ message: 'Error changing password' });
   }
 });
 

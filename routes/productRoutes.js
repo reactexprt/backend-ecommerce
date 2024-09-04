@@ -98,29 +98,20 @@ router.get('/', async (req, res, next) => {
 });
 
 // Get a single product by ID
-router.get('/:id', authenticateToken, productLimiter, async (req, res, next) => {
+router.get('/:id', productLimiter, async (req, res, next) => {
   try {
-    const cacheKey = `product_${req.params.id}`;
-
-    // Try to get the product from the cache first
-    const cachedProduct = productCache.get(cacheKey);
-    if (cachedProduct) {
-      return res.json(cachedProduct);
-    }
-
-    // Fetch the product from the database with lean() for better performance
-    const product = await Product.findById(req.params.id).lean().exec();
+    // Fetch the product from the database without checking the cache temporarily
+    const product = await Product.findById(req.params.id)
+      .populate('comments.userId', 'username') // Populate the username for comments
+      .exec();
 
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    // Store the fetched product in the cache
-    productCache.set(cacheKey, product); // Cache with default TTL (1 hour)
-
+    // Respond with the product including the updated averageRating
     res.json(product);
   } catch (err) {
-    // Handle specific errors, like invalid object IDs
     if (err instanceof mongoose.Error.CastError) {
       return res.status(400).json({ message: 'Invalid product ID' });
     }
@@ -128,6 +119,54 @@ router.get('/:id', authenticateToken, productLimiter, async (req, res, next) => 
   }
 });
 
+// POST route to add a comment
+router.post('/:productId/comment', authenticateToken, async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { comment, rating } = req.body;
+    const userId = req.user.userId;
+
+    // Fetch the user details to get the username
+    const user = await User.findById(userId).select('username');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const username = user.username;
+
+    // Add the comment and rating to the product's comments array
+    await Product.findByIdAndUpdate(
+      productId,
+      { $push: { comments: { userId, username, comment, rating } } },
+      { new: true }
+    );
+
+    // Recalculate the average rating using MongoDB's aggregation pipeline
+    const productWithUpdatedAverage = await Product.aggregate([
+      { $match: { _id: new mongoose.Types.ObjectId(productId) } },
+      { $unwind: "$comments" }, // Unwind comments array to access each comment
+      {
+        $group: {
+          _id: "$_id",
+          averageRating: { $avg: "$comments.rating" } // Calculate average rating
+        }
+      }
+    ]);
+
+    // Update the product's average rating
+    const averageRating = productWithUpdatedAverage.length ? productWithUpdatedAverage[0].averageRating : 0;
+    await Product.findByIdAndUpdate(productId, { averageRating: averageRating.toFixed(1) });
+
+    // Fetch the updated product to return in the response
+    const updatedProduct = await Product.findById(productId);
+
+    res.status(201).json({ message: 'Comment and rating added successfully', product: updatedProduct });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error adding comment and rating', error });
+  }
+});
 
 // Create a new product (Admin only)
 router.post(
@@ -161,6 +200,7 @@ router.post(
         price: parseFloat(req.body.price),
         description: req.body.description.trim(),
         category: req.body.category.trim(),
+        discountPrice: parseFloat(req.body.discountPrice),
         images: imagePaths,
         stock: parseInt(req.body.stock, 10),
       };
