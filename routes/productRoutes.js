@@ -179,44 +179,83 @@ router.post(
     check('category').not().isEmpty().withMessage('Category is required'),
   ],
   authenticateToken,
-  productLimiter,
+  productLimiter, // Apply rate limiting middleware
   async (req, res, next) => {
     try {
+      // Check if the user is an admin
       const user = await User.findById(req.user.userId).select('email isAdmin -_id').lean();  
       const errors = validationResult(req);
       if (!errors.isEmpty() || !user.isAdmin) {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      // Upload files to S3 and store their URLs
-      const imageUploadPromises = req.files.map(file =>
-        uploadToS3(file, req.body.category.trim(), req.body.name.trim())
-      );
-      const uploadedImages = await Promise.all(imageUploadPromises);
-      const imagePaths = uploadedImages.map(data => data.Location);
-
+      // Sanitize incoming product data
       const sanitizedData = {
         name: req.body.name.trim(),
         price: parseFloat(req.body.price),
         description: req.body.description.trim(),
         category: req.body.category.trim(),
         discountPrice: parseFloat(req.body.discountPrice),
-        images: imagePaths,
         stock: parseInt(req.body.stock, 10),
       };
 
-      const product = new Product(sanitizedData);
-      const newProduct = await product.save();
+      // Check if a product with the same name already exists
+      let product = await Product.findOne({ name: sanitizedData.name }).exec();
 
-      // Invalidate relevant cache (e.g., product list cache)
-      productCache.del('product_list');
+      // If the product exists, update it
+      if (product) {
+        // Upload new images if provided
+        if (req.files.length > 0) {
+          const imageUploadPromises = req.files.map(file =>
+            uploadToS3(file, req.body.category.trim(), req.body.name.trim())
+          );
+          const uploadedImages = await Promise.all(imageUploadPromises);
+          const imagePaths = uploadedImages.map(data => data.Location);
 
-      return res.status(201).json(newProduct);
+          // Append new images to existing ones
+          product.images = [...product.images, ...imagePaths];
+        }
+
+        // Update product details with new sanitized data
+        Object.assign(product, sanitizedData);
+
+        // Save the updated product
+        const updatedProduct = await product.save();
+
+        // Invalidate cache after updating
+        productCache.del('product_list'); // Invalidate product list cache
+        productCache.del(`product_${updatedProduct._id}`); // Invalidate specific product cache
+
+        return res.status(200).json({ message: 'Product updated successfully', product: updatedProduct });
+      }
+
+      // If no product exists, create a new one
+      const imageUploadPromises = req.files.map(file =>
+        uploadToS3(file, req.body.category.trim(), req.body.name.trim())
+      );
+      const uploadedImages = await Promise.all(imageUploadPromises);
+      const imagePaths = uploadedImages.map(data => data.Location);
+
+      const newProduct = new Product({
+        ...sanitizedData,
+        images: imagePaths
+      });
+
+      // Save the new product
+      const savedProduct = await newProduct.save();
+
+      // Cache the new product and invalidate relevant caches
+      productCache.del('product_list'); // Invalidate product list cache
+      productCache.set(`product_${savedProduct._id}`, savedProduct); // Cache the new product
+
+      return res.status(201).json({ message: 'Product created successfully', product: savedProduct });
     } catch (err) {
-      console.error('Error creating product:', err.message || err);
-      return res.status(500).json({ message: 'An error occurred while creating the product.', error: err.message || err });
+      console.error('Error handling product:', err.message || err);
+      return res.status(500).json({ message: 'An error occurred while processing the product.', error: err.message || err });
     }
   }
 );
+
+
 
 module.exports = router;

@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
+const axios = require('axios');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
@@ -155,6 +156,82 @@ app.post('/api/auth/google', googleSignInLimiter, async (req, res) => {
     res.status(401).json({ message: 'Invalid Google ID token' });
   }
 });
+
+app.post('/api/auth/facebook', googleSignInLimiter, async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { accessToken } = req.body;
+
+    // Verify the Facebook access token and get user info
+    const facebookResponse = await axios.get(
+      `https://graph.facebook.com/me?fields=id,name,email&access_token=${accessToken}`
+    );
+
+    const { email, id: facebookId, name } = facebookResponse.data;
+    const username = email.split('@')[0];
+
+    // Check if the user exists in the database
+    let user = await User.findOne({ email }).select('_id isAdmin refreshToken').session(session).exec();
+
+    if (!user) {
+      // User does not exist, create a new user record
+      const randomPassword = crypto.randomBytes(32).toString('hex');
+      user = new User({
+        facebookId: facebookId,
+        email: email,
+        username: username,
+        password: randomPassword,
+      });
+      await user.save({ session });
+    }
+
+    // Generate the authentication token (JWT)
+    const authToken = jwt.sign(
+      { userId: user._id, isAdmin: user.isAdmin },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    // Generate a new refresh token
+    const refreshToken = jwt.sign(
+      { userId: user._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Update the refresh token in the database
+    await User.findOneAndUpdate(
+      { _id: user._id },
+      { $set: { refreshToken: refreshToken } },
+      { session, new: true }
+    ).exec();
+
+    await session.commitTransaction();
+    session.endSession();
+
+    // Set the refresh token in an HTTP-only, Secure cookie
+    res.cookie('refreshToken', refreshToken, {
+      domain: '.himalayanrasa.com',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production', // Ensure secure cookies in production
+      sameSite: 'Strict', // Prevent CSRF attacks
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    res.status(200).json({ authToken, userId: user._id });
+  } catch (error) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    session.endSession();
+
+    console.error('Error verifying Facebook access token:', error);
+    res.status(401).json({ message: 'Invalid Facebook access token' });
+  }
+});
+
 
 
 
