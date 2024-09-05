@@ -21,6 +21,8 @@ const cartRoutes = require('./routes/cartRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const webauthnRoutes = require('./routes/webauthnRoute');
 const wishlistRoutes = require('./routes/wishlistRoutes');
+const shopRoutes = require('./routes/shopRoutes');
+const searchRoutes = require('./routes/searchRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 
 
@@ -256,6 +258,8 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/shops', shopRoutes);
+app.use('/api/search', searchRoutes);
 app.use('/api/payment', paymentRoutes);
 
 // app.use(

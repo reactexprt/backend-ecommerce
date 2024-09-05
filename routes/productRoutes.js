@@ -45,7 +45,7 @@ const upload = multer({
 const uploadToS3 = async (file, category, productName) => {
   const params = {
     Bucket: 'himalayanrasa-product-images', // Replace with your bucket name
-    Key: `uploads/${category}/${productName}/${Date.now()}-${file.originalname}`, // File path in S3
+    Key: `uploads/Products/${category}/${productName}/${Date.now()}-${file.originalname}`, // File path in S3
     Body: file.buffer,
     ContentType: file.mimetype,
     // ACL: 'public-read' // Remove this line since ACLs are not allowed
@@ -168,7 +168,7 @@ router.post('/:productId/comment', authenticateToken, async (req, res) => {
   }
 });
 
-// Create a new product (Admin only)
+// Create a new product or update one (Admin only)
 router.post(
   '/',
   [
@@ -177,6 +177,7 @@ router.post(
     check('price').isFloat({ gt: 0 }).withMessage('Price must be greater than 0'),
     check('description').not().isEmpty().withMessage('Description is required'),
     check('category').not().isEmpty().withMessage('Category is required'),
+    check('shop').not().isEmpty().withMessage('Shop is required') // Ensure shop ID is provided
   ],
   authenticateToken,
   productLimiter, // Apply rate limiting middleware
@@ -197,6 +198,7 @@ router.post(
         category: req.body.category.trim(),
         discountPrice: parseFloat(req.body.discountPrice),
         stock: parseInt(req.body.stock, 10),
+        shop: req.body.shop.trim(), // Include shop reference from the request
       };
 
       // Check if a product with the same name already exists
@@ -238,7 +240,7 @@ router.post(
 
       const newProduct = new Product({
         ...sanitizedData,
-        images: imagePaths
+        images: imagePaths,
       });
 
       // Save the new product
@@ -255,7 +257,5 @@ router.post(
     }
   }
 );
-
-
 
 module.exports = router;
