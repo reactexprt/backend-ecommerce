@@ -5,4 +5,5 @@ const oAuthSchema = new mongoose.Schema({
     refreshToken: { type: String, required: true }
 }, { timestamps: true });
 
-module.exports = mongoose.model('OAuth', oAuthSchema);
+const OAuth = mongoose.model('OAuth', oAuthSchema);
+module.exports = OAuth;

@@ -2,37 +2,66 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const Shop = require('../models/Shop');
+const Synonym = require('../models/Synonym');
 
+// Search products and shops with synonyms, pagination, and optimization
 // Search products and shops
 router.get('/', async (req, res) => {
     try {
-        let { query } = req.query;
+        let { query, page = 1, limit = 10 } = req.query;
 
         // Ensure query is a string, if not provided default to an empty string
         query = query ? String(query) : '';
 
-        // If query is empty, don't use regex, otherwise perform the regex search
-        let searchQuery = {};
+        let searchTerms = [query]; // Start with the original search term
+
+        // Check if the search term has any synonyms
         if (query.trim()) {
-            searchQuery = {
-                $or: [
-                    { name: { $regex: query, $options: 'i' } },  // Text search
-                    { description: { $regex: query, $options: 'i' } },  // Text search
-                    { category: { $regex: query, $options: 'i' } },  // Text search
-                ],
-            };
+            const synonymEntry = await Synonym.findOne({
+                synonyms: { $regex: new RegExp(query, 'i') } // Case-insensitive search for synonyms
+            });
+
+            // If synonyms are found, add them and the base term to the search terms
+            if (synonymEntry) {
+                searchTerms = [synonymEntry.baseTerm, ...synonymEntry.synonyms];
+            }
         }
 
-        // Search both products and shops and include image URLs in the result
-        const products = await Product.find(searchQuery).select('name price images description');
-        const shops = await Shop.find(searchQuery).select('name location description images');
+        // Construct the search query using the original term and any found synonyms
+        const searchQuery = {
+            $or: [
+                { name: { $in: searchTerms.map(term => new RegExp(term, 'i')) } },  // Search by name
+                { description: { $in: searchTerms.map(term => new RegExp(term, 'i')) } },  // Search by description
+                { category: { $in: searchTerms.map(term => new RegExp(term, 'i')) } },  // Search by category
+            ]
+        };
 
-        res.status(200).json({ products, shops });
+        // Pagination logic
+        const products = await Product.find(searchQuery)
+            .select('name price images description')
+            .limit(limit * 1)
+            .skip((page - 1) * limit);
+
+        const shops = await Shop.find(searchQuery)
+            .select('name location description images')
+            .limit(limit * 1)
+            .skip((page - 1) * limit);
+
+        // Count total results for front-end to know when to stop loading more
+        const totalProducts = await Product.countDocuments(searchQuery);
+        const totalShops = await Shop.countDocuments(searchQuery);
+
+        res.status(200).json({
+            products,
+            shops,
+            totalProducts,
+            totalShops,
+            currentPage: page,
+            totalPages: Math.ceil((totalProducts + totalShops) / limit)
+        });
     } catch (err) {
         console.error('Search failed:', err);
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
-
-
 module.exports = router;

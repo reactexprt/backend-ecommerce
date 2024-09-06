@@ -10,6 +10,7 @@ const mongoose = require('mongoose');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const User = require('../models/User');
 const Product = require('../models/Product');
+const Synonym = require('../models/Synonym');
 const { router: userRoutes, authenticateToken } = require('./userRoutes');
 const NodeCache = require('node-cache');
 const productCache = new NodeCache({ stdTTL: 3600, checkperiod: 120 }); // Cache TTL set to 1 hour, check every 2 minutes
@@ -172,19 +173,20 @@ router.post('/:productId/comment', authenticateToken, async (req, res) => {
 router.post(
   '/',
   [
-    upload.array('images', 10),
+    upload.array('images', 10), // Allow up to 10 images
     check('name').not().isEmpty().withMessage('Product name is required'),
     check('price').isFloat({ gt: 0 }).withMessage('Price must be greater than 0'),
     check('description').not().isEmpty().withMessage('Description is required'),
     check('category').not().isEmpty().withMessage('Category is required'),
-    check('shop').not().isEmpty().withMessage('Shop is required') // Ensure shop ID is provided
+    check('shop').not().isEmpty().withMessage('Shop is required'), // Ensure shop ID is provided
+    check('synonyms').optional().isString().withMessage('Synonyms must be a comma-separated string') // Validate synonyms
   ],
   authenticateToken,
-  productLimiter, // Apply rate limiting middleware
-  async (req, res, next) => {
+  productLimiter, // Apply rate limiting middleware for heavy traffic
+  async (req, res) => {
     try {
       // Check if the user is an admin
-      const user = await User.findById(req.user.userId).select('email isAdmin -_id').lean();  
+      const user = await User.findById(req.user.userId).select('email isAdmin -_id').lean();
       const errors = validationResult(req);
       if (!errors.isEmpty() || !user.isAdmin) {
         return res.status(400).json({ errors: errors.array() });
@@ -201,43 +203,48 @@ router.post(
         shop: req.body.shop.trim(), // Include shop reference from the request
       };
 
+      const { synonyms } = req.body; // Extract synonyms from request body
+
       // Check if a product with the same name already exists
       let product = await Product.findOne({ name: sanitizedData.name }).exec();
 
-      // If the product exists, update it
-      if (product) {
-        // Upload new images if provided
-        if (req.files.length > 0) {
-          const imageUploadPromises = req.files.map(file =>
-            uploadToS3(file, req.body.category.trim(), req.body.name.trim())
-          );
-          const uploadedImages = await Promise.all(imageUploadPromises);
-          const imagePaths = uploadedImages.map(data => data.Location);
-
-          // Append new images to existing ones
-          product.images = [...product.images, ...imagePaths];
-        }
-
-        // Update product details with new sanitized data
-        Object.assign(product, sanitizedData);
-
-        // Save the updated product
-        const updatedProduct = await product.save();
-
-        // Invalidate cache after updating
-        productCache.del('product_list'); // Invalidate product list cache
-        productCache.del(`product_${updatedProduct._id}`); // Invalidate specific product cache
-
-        return res.status(200).json({ message: 'Product updated successfully', product: updatedProduct });
-      }
-
-      // If no product exists, create a new one
+      // Handle image uploads
       const imageUploadPromises = req.files.map(file =>
         uploadToS3(file, req.body.category.trim(), req.body.name.trim())
       );
       const uploadedImages = await Promise.all(imageUploadPromises);
       const imagePaths = uploadedImages.map(data => data.Location);
 
+      if (product) {
+        // Append new images if updating an existing product
+        if (imagePaths.length > 0) {
+          product.images = [...product.images, ...imagePaths];
+        }
+
+        // Update product details
+        Object.assign(product, sanitizedData);
+
+        // Save updated product
+        const updatedProduct = await product.save();
+
+        // Update synonyms if provided
+        if (synonyms) {
+          const synonymArray = synonyms.split(',').map(s => s.trim().toLowerCase());
+          await Synonym.findOneAndUpdate(
+            { baseTerm: sanitizedData.name.toLowerCase() },
+            { $set: { synonyms: synonymArray } },
+            { upsert: true, new: true }
+          );
+        }
+
+        // Cache invalidation for updated product
+        productCache.del('product_list');
+        productCache.del(`product_${updatedProduct._id}`);
+
+        return res.status(200).json({ message: 'Product updated successfully', product: updatedProduct });
+      }
+
+      // Create new product if not found
       const newProduct = new Product({
         ...sanitizedData,
         images: imagePaths,
@@ -246,16 +253,30 @@ router.post(
       // Save the new product
       const savedProduct = await newProduct.save();
 
-      // Cache the new product and invalidate relevant caches
-      productCache.del('product_list'); // Invalidate product list cache
-      productCache.set(`product_${savedProduct._id}`, savedProduct); // Cache the new product
+      // Save synonyms if provided
+      if (synonyms) {
+        const synonymArray = synonyms.split(',').map(s => s.trim().toLowerCase());
+        const synonymEntry = new Synonym({
+          baseTerm: sanitizedData.name.toLowerCase(),
+          synonyms: synonymArray,
+        });
+        await synonymEntry.save();
+      }
+
+      // Cache the new product and invalidate product list cache
+      productCache.del('product_list');
+      productCache.set(`product_${savedProduct._id}`, savedProduct);
 
       return res.status(201).json({ message: 'Product created successfully', product: savedProduct });
     } catch (err) {
       console.error('Error handling product:', err.message || err);
-      return res.status(500).json({ message: 'An error occurred while processing the product.', error: err.message || err });
+      return res.status(500).json({
+        message: 'An error occurred while processing the product.',
+        error: err.message || err,
+      });
     }
   }
 );
+
 
 module.exports = router;
