@@ -11,7 +11,7 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     // Optimize the query by projecting only the necessary fields
     let cart = await Cart.findOne({ user: req.user.userId })
-      .populate('items.productId', 'name price images') // Populate only necessary fields
+      .populate('items.productId', 'name price images discountPrice') // Populate only necessary fields
       .exec();
 
     if (!cart) {
@@ -60,7 +60,7 @@ router.post('/', authenticateToken, async (req, res) => {
     await session.commitTransaction();
     session.endSession();
     // Populate the cart items with necessary fields from product
-    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId', 'name price images');
+    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId', 'name price images discountPrice');
     res.status(201).json(updatedCart.items);
   } catch (err) {
     console.error('Error updating cart:', err);
@@ -109,7 +109,7 @@ router.put('/:productId', authenticateToken, async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId', 'name price images');
+    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId', 'name price images discountPrice');
     res.status(200).json(updatedCart.items);
 
   } catch (err) {
@@ -154,7 +154,7 @@ router.delete('/:productId', authenticateToken, async (req, res) => {
     }
 
     // Fetch the updated cart within the same session to ensure consistency
-    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId', 'name price images').session(session);
+    const updatedCart = await Cart.findOne({ user: userId }).populate('items.productId', 'name price images discountPrice').session(session);
 
     await session.commitTransaction();
     session.endSession();

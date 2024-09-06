@@ -69,7 +69,7 @@ router.get('/:shopId/products', async (req, res, next) => {
 
         // Fetch products for the specific shop
         const products = await Product.find({ shop: shopId })
-            .select('name price description images')
+            .select('name price description images discountPrice')
             .skip((page - 1) * limit) // Pagination
             .limit(limit)
             .exec();
