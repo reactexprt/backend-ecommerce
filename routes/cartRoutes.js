@@ -36,10 +36,10 @@ router.post('/', authenticateToken, async (req, res) => {
     return res.status(400).json({ message: 'Product ID and a positive quantity are required.' });
   }
 
+  const session = await Cart.startSession();
+  session.startTransaction();
+
   try {
-    // Use transactions for ensuring consistency in concurrent scenarios
-    const session = await Cart.startSession();
-    session.startTransaction();
     // Find the cart with the specific item
     let cart = await Cart.findOne({ user: userId }).session(session);
     if (!cart) {

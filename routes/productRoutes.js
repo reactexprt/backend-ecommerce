@@ -127,7 +127,6 @@ router.post('/:productId/comment', authenticateToken, async (req, res) => {
     const { comment, rating } = req.body;
     const userId = req.user.userId;
 
-    // Fetch the user details to get the username
     const user = await User.findById(userId).select('username');
 
     if (!user) {
@@ -137,16 +136,20 @@ router.post('/:productId/comment', authenticateToken, async (req, res) => {
     const username = user.username;
 
     // Add the comment and rating to the product's comments array
-    await Product.findByIdAndUpdate(
+    const updatedProduct = await Product.findByIdAndUpdate(
       productId,
       { $push: { comments: { userId, username, comment, rating } } },
       { new: true }
     );
 
-    // Recalculate the average rating using MongoDB's aggregation pipeline
+    if (!updatedProduct) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    // Recalculate the average rating using aggregation
     const productWithUpdatedAverage = await Product.aggregate([
       { $match: { _id: new mongoose.Types.ObjectId(productId) } },
-      { $unwind: "$comments" }, // Unwind comments array to access each comment
+      { $unwind: "$comments" }, // Unwind comments array
       {
         $group: {
           _id: "$_id",
@@ -155,14 +158,15 @@ router.post('/:productId/comment', authenticateToken, async (req, res) => {
       }
     ]);
 
-    // Update the product's average rating
     const averageRating = productWithUpdatedAverage.length ? productWithUpdatedAverage[0].averageRating : 0;
+
+    // Update the product's average rating
     await Product.findByIdAndUpdate(productId, { averageRating: averageRating.toFixed(1) });
 
     // Fetch the updated product to return in the response
-    const updatedProduct = await Product.findById(productId);
+    const finalUpdatedProduct = await Product.findById(productId);
 
-    res.status(201).json({ message: 'Comment and rating added successfully', product: updatedProduct });
+    res.status(201).json({ message: 'Comment and rating added successfully', product: finalUpdatedProduct });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error adding comment and rating', error });
