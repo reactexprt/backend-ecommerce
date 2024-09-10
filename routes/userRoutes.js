@@ -238,14 +238,24 @@ router.post('/token', tokenRateLimiter, async (req, res) => {
       return res.status(403).json({ message: 'Invalid refresh token.' });
     }
 
+    // Check if refresh token reuse is detected
+    if (user.refreshToken !== refreshToken) {
+      // Log out the user across all sessions
+      await User.updateOne({ _id: user._id }, { refreshToken: null }); // Clear refresh token
+      await session.commitTransaction();
+      session.endSession();
+      return res.status(403).json({ message: 'Refresh token reuse detected. You have been logged out.' });
+    }
+
     // Check if the refresh token has expired
     const tokenExpirationDate = new Date(payload.exp * 1000);
     const currentDate = new Date();
+    const expirationThreshold = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
     let newRefreshToken = refreshToken;
 
-    if (tokenExpirationDate <= currentDate) {
-      // Generate a new refresh token if the old one has expired
+    if (tokenExpirationDate - currentDate <= expirationThreshold) {
+      // Generate a new refresh token if the old one is about to expire
       newRefreshToken = jwt.sign(
         { userId: user._id },
         process.env.REFRESH_TOKEN_SECRET,
