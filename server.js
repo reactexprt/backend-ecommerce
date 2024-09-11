@@ -96,7 +96,7 @@ app.post('/api/auth/google', googleSignInLimiter, async (req, res) => {
     });
     const payload = ticket.getPayload();
     const email = payload['email'];
-    const username = email.split('@')[0];
+    const username = `${email.split('@')[0]}_gmail`;
     const googleId = payload['sub'];
 
     // Check if the user exists in the database
@@ -172,7 +172,7 @@ app.post('/api/auth/facebook', googleSignInLimiter, async (req, res) => {
     );
 
     const { email, id: facebookId, name } = facebookResponse.data;
-    const username = email.split('@')[0];
+    const username = `${email.split('@')[0]}_facebook`;
 
     // Check if the user exists in the database
     let user = await User.findOne({ email }).select('_id isAdmin refreshToken').session(session).exec();

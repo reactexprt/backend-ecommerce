@@ -5,6 +5,7 @@
 
 # Ignore node_modules directory
 /node_modules
+/myenv
 
 # Ignore other files and directories
 .DS_Store

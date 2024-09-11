@@ -120,14 +120,23 @@ router.post('/register', loginLimiter, [
   try {
     const { email, username, password } = req.body;
 
-    // Optimize by checking for the existence of the user using projection to fetch minimal fields
-    const existingUser = await User.findOne({ email }).select('_id').session(session).exec();
-    if (existingUser) {
+    // Check if the email is already in use
+    const existingEmail = await User.findOne({ email }).select('_id').session(session).exec();
+    if (existingEmail) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({ message: 'Email already in use' });
     }
 
+    // Check if the username is already in use
+    const existingUsername = await User.findOne({ username }).select('_id').session(session).exec();
+    if (existingUsername) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: 'Username already in use. Please choose a different one.' });
+    }
+
+    // Hash the password and save the user
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = new User({
       username,
@@ -137,10 +146,13 @@ router.post('/register', loginLimiter, [
 
     await user.save({ session });
 
+    // Commit the transaction
     await session.commitTransaction();
     session.endSession();
+    
     res.status(201).json({ message: 'User registered successfully' });
   } catch (err) {
+    // Rollback the transaction in case of error
     await session.abortTransaction();
     session.endSession();
     console.error('Error registering user:', err);
