@@ -560,8 +560,64 @@ router.post('/request-reset-password', changePasswordLimiter, async (req, res) =
         from: process.env.EMAIL,
         to: email,
         subject: 'Password Reset OTP',
-        text: `Your OTP for password reset is ${otp}`
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; background-color: #ffffff;">
+            <!-- Header -->
+            <div style="text-align: center; margin-bottom: 20px;">
+              <img src="https://himalayanrasa-product-images.s3.ap-south-1.amazonaws.com/uploads/WebsiteImages/himalayanrasa.png" alt="Company Logo" style="max-width: 150px;">
+            </div>
+      
+            <!-- OTP Information -->
+            <h2 style="color: #4CAF50;">Password Reset Request</h2>
+            <p>We received a request to reset your password. Use the OTP below to reset your password:</p>
+            
+            <!-- OTP Code -->
+            <div style="background-color: #f9f9f9; padding: 20px; text-align: center; margin: 20px 0;">
+              <h1 style="font-size: 36px; margin: 0; color: #333;">${otp}</h1>
+            </div>
+      
+            <!-- Instruction -->
+            <p>If you did not request a password reset, please ignore this email or contact support if you have any concerns.</p>
+      
+            <!-- Call to Action Button -->
+            <div style="text-align: center; margin-top: 30px;">
+              <a href="https://www.himalayanrasa.com/login" 
+                 style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+                Reset Password
+              </a>
+            </div>
+
+            <!-- Social media icons -->
+            <table align="center" style="margin-top: 30px;">
+              <tr>
+                <td align="center" style="padding: 10px;">
+                  <a href="https://facebook.com/himalayanrasa" style="margin: 0 5px;">
+                    <img src="https://himalayanrasa-product-images.s3.ap-south-1.amazonaws.com/uploads/WebsiteImages/backend-email-icons/Facebook.png" 
+                        alt="Facebook" 
+                        style="width: 24px; height: 24px;">
+                  </a>
+                </td>
+                <td align="center" style="padding: 10px;">
+                  <a href="https://instagram.com/himalayanrasa" style="margin: 0 5px;">
+                    <img src="https://himalayanrasa-product-images.s3.ap-south-1.amazonaws.com/uploads/WebsiteImages/backend-email-icons/Instagram.png" 
+                        alt="Instagram" 
+                        style="width: 24px; height: 24px;">
+                  </a>
+                </td>
+              </tr>
+            </table>
+      
+            <!-- Footer -->
+            <div style="margin-top: 30px; font-size: 12px; color: #777; text-align: center;">
+              <p>Ħimalayan R̥asa Inc. | Rangri Road, Sarsai, Himachal Pradesh</p>
+              <p><a href="https://www.himalayanrasa.com/terms" style="color: #4CAF50; text-decoration: none;">Terms of Service</a> | 
+                <a href="https://www.himalayanrasa.com/privacy" style="color: #4CAF50; text-decoration: none;">Privacy Policy</a></p>
+              <p>If you have any questions, contact us at <a href="mailto:contact@himalayanrasa.com" style="color: #4CAF50;">contact@himalayanrasa.com</a></p>
+            </div>
+          </div>
+        `
       };
+      
 
       try {
         await sendMail(mailOptions);

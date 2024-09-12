@@ -99,13 +99,90 @@ router.post('/order', [authenticateToken, orderLimiter], async (req, res) => {
       from: process.env.EMAIL,
       to: user.email,
       subject: 'Order Confirmation',
-      text: `
-        Thank you for your order!
-        Shipping Address: ${order.shippingAddress}
-        Total Amount: ₹${order.totalAmount.toFixed(2)}
-        Items: ${cartItems.map(item => `${item.productId.name} (x${item.quantity})`).join(', ')}
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; background-color: #ffffff;">
+          <!-- Company Logo -->
+          <div style="text-align: center; margin-bottom: 20px;">
+            <img src="https://himalayanrasa-product-images.s3.ap-south-1.amazonaws.com/uploads/WebsiteImages/himalayanrasa.png" alt="Company Logo" style="max-width: 150px;">
+          </div>
+    
+          <!-- Order Details -->
+          <h2 style="color: #4CAF50;">Thank you for your order!</h2>
+          <p>Your order has been placed successfully. Here are your order details:</p>
+          
+          <!-- Shipping Address -->
+          <div style="background-color: #f9f9f9; padding: 10px; margin-bottom: 20px;">
+            <h3>Shipping Address:</h3>
+            <p>${order.shippingAddress}</p>
+          </div>
+    
+          <!-- Order Summary -->
+          <div style="background-color: #f9f9f9; padding: 10px; margin-bottom: 20px;">
+            <h3>Order Summary</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="background-color: #e0e0e0;">
+                  <th style="text-align: left; padding: 8px;">Item</th>
+                  <th style="text-align: center; padding: 8px;">Quantity</th>
+                  <th style="text-align: right; padding: 8px;">Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${cartItems.map(item => `
+                  <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #e0e0e0;">${item.productId.name}</td>
+                    <td style="text-align: center; padding: 8px; border-bottom: 1px solid #e0e0e0;">${item.quantity}</td>
+                    <td style="text-align: right; padding: 8px; border-bottom: 1px solid #e0e0e0;">₹${(item.productId.discountPrice * item.quantity).toFixed(2)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2" style="text-align: right; padding: 8px;">Total Amount:</td>
+                  <td style="text-align: right; padding: 8px;">₹${order.totalAmount.toFixed(2)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+    
+          <!-- Call to Action Button -->
+          <div style="text-align: center; margin-top: 20px;">
+            <a href="https://www.himalayanrasa.com/previousOrders/${order._id}" 
+               style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+              View Order Details
+            </a>
+          </div>
+    
+          <!-- Social media icons -->
+          <table align="center" style="margin-top: 30px;">
+            <tr>
+              <td align="center" style="padding: 10px;">
+                <a href="https://facebook.com/himalayanrasa" style="margin: 0 5px;">
+                  <img src="https://himalayanrasa-product-images.s3.ap-south-1.amazonaws.com/uploads/WebsiteImages/backend-email-icons/Facebook.png" 
+                      alt="Facebook" 
+                      style="width: 24px; height: 24px;">
+                </a>
+              </td>
+              <td align="center" style="padding: 10px;">
+                <a href="https://instagram.com/himalayanrasa" style="margin: 0 5px;">
+                  <img src="https://himalayanrasa-product-images.s3.ap-south-1.amazonaws.com/uploads/WebsiteImages/backend-email-icons/Instagram.png" 
+                      alt="Instagram" 
+                      style="width: 24px; height: 24px;">
+                </a>
+              </td>
+            </tr>
+          </table>
+    
+          <!-- Footer -->
+          <div style="margin-top: 30px; font-size: 12px; color: #777; text-align: center;">
+            <p>Ħimalayan R̥asa Inc. | Rangri Road, Sarsai, Himachal Pradesh</p>
+            <p><a href="https://www.himalayanrasa.com/terms" style="color: #4CAF50; text-decoration: none;">Terms of Service</a> | 
+               <a href="https://www.himalayanrasa.com/privacy" style="color: #4CAF50; text-decoration: none;">Privacy Policy</a></p>
+            <p>If you have any questions, contact us at <a href="mailto:contact@himalayanrasa.com" style="color: #4CAF50;">contact@himalayanrasa.com</a></p>
+          </div>
+        </div>
       `
-    };
+    }; 
 
     // Send mail asynchronously (non-blocking)
     sendMail(mailOptions).catch(console.error);
