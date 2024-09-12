@@ -118,7 +118,7 @@ app.post('/api/auth/google', googleSignInLimiter, async (req, res) => {
     const authToken = jwt.sign(
       { userId: user._id, isAdmin: user.isAdmin },
       process.env.JWT_SECRET,
-      { expiresIn: '1m' }
+      { expiresIn: '1h' }
     );
 
     // Generate a new refresh token
