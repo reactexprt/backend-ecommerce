@@ -22,11 +22,12 @@ const addressSchema = new mongoose.Schema({
 });
 
 const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
+  username: { type: String, required: true, unique: true, index: true },
   email: { 
     type: String, 
     required: true, 
     unique: true, 
+    index: true,
     match: [/.+@.+\..+/, 'Please enter a valid email address'] 
   },
   password: { type: String, required: true },

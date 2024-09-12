@@ -118,7 +118,7 @@ app.post('/api/auth/google', googleSignInLimiter, async (req, res) => {
     const authToken = jwt.sign(
       { userId: user._id, isAdmin: user.isAdmin },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '1m' }
     );
 
     // Generate a new refresh token
@@ -147,7 +147,7 @@ app.post('/api/auth/google', googleSignInLimiter, async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
-    res.status(200).json({ authToken, userId: user._id });
+    res.status(200).json({ authToken, userId: user._id, username, email });
   } catch (error) {
     if (session.inTransaction()) {
       await session.abortTransaction();
@@ -222,7 +222,7 @@ app.post('/api/auth/facebook', googleSignInLimiter, async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    res.status(200).json({ authToken, userId: user._id });
+    res.status(200).json({ authToken, userId: user._id, username, email });
   } catch (error) {
     if (session.inTransaction()) {
       await session.abortTransaction();

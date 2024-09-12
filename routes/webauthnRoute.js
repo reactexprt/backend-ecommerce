@@ -32,39 +32,39 @@ router.post('/registration-options', registerLimiter, async (req, res) => {
   session.startTransaction();
 
   try {
-    const { email } = req.body;
+    const { identifier } = req.body; // Now using identifier (email or username)
 
-    if (!email) {
+    if (!identifier) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(400).json({ message: 'Email is required' });
+      return res.status(400).json({ message: 'Email or Username is required' });
     }
 
-    // Sanitize the email input to prevent injection attacks and ensure clean lookup
-    const sanitizedEmail = email.trim();
+    // Sanitize the identifier (email or username)
+    const sanitizedIdentifier = purify.sanitize(identifier).trim();
 
-    // Optimize query by using indexed fields and project only needed fields
-    const user = await User.findOne({ email: sanitizedEmail })
-      .select('_id email currentChallenge')
+    // Find user by either email or username
+    const user = await User.findOne({
+      $or: [{ email: sanitizedIdentifier }, { username: sanitizedIdentifier }],
+    })
+      .select('_id email username currentChallenge')
       .session(session)
       .exec();
 
     if (!user) {
       await session.abortTransaction();
       session.endSession();
-      console.log('User not found for email:', sanitizedEmail);
+      console.log('User not found for identifier:', sanitizedIdentifier);
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Convert userID to a Buffer
-    const userIDBuffer = Buffer.from(user._id.toString(), 'utf-8');
-    
     // Generate registration options
+    const userIDBuffer = Buffer.from(user._id.toString(), 'utf-8');
     const options = await generateRegistrationOptions({
       rpName: 'Himalayan Rasa',
       rpID: process.env.WEBAUTHN_RPID,
       userID: userIDBuffer,
-      userName: user.email,
+      userName: user.email || user.username, // Either email or username
       attestationType: 'direct',
       authenticatorSelection: {
         userVerification: 'preferred',
@@ -72,7 +72,6 @@ router.post('/registration-options', registerLimiter, async (req, res) => {
       },
     });
 
-    // Store the generated challenge in the user's document
     await User.findOneAndUpdate(
       { _id: user._id },
       { $set: { currentChallenge: options.challenge } },
@@ -99,19 +98,21 @@ router.post('/register', registerLimiter, async (req, res) => {
   session.startTransaction();
 
   try {
-    const { email, credential } = req.body;
+    const { identifier, credential } = req.body; // Using identifier instead of just email
 
-    if (!email || !credential) {
+    if (!identifier || !credential) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(400).json({ message: 'Email and credential are required.' });
+      return res.status(400).json({ message: 'Email/Username and credential are required.' });
     }
 
-    // Sanitize the email input
-    const sanitizedEmail = purify.sanitize(email).trim();
+    // Sanitize the identifier
+    const sanitizedIdentifier = purify.sanitize(identifier).trim();
 
-    // Minimize the data fetched and ensure fields are indexed
-    const user = await User.findOne({ email: sanitizedEmail })
+    // Find user by either email or username
+    const user = await User.findOne({
+      $or: [{ email: sanitizedIdentifier }, { username: sanitizedIdentifier }],
+    })
       .select('currentChallenge webauthnCredentials biometricEnabled')
       .session(session)
       .exec();
@@ -119,7 +120,7 @@ router.post('/register', registerLimiter, async (req, res) => {
     if (!user) {
       await session.abortTransaction();
       session.endSession();
-      console.log('User not found for email:', sanitizedEmail);
+      console.log('User not found for identifier:', sanitizedIdentifier);
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -133,13 +134,12 @@ router.post('/register', registerLimiter, async (req, res) => {
     if (!verification.verified) {
       await session.abortTransaction();
       session.endSession();
-      console.log('Registration verification failed for user:', sanitizedEmail);
+      console.log('Registration verification failed for user:', sanitizedIdentifier);
       return res.status(400).json({ message: 'Registration verification failed' });
     }
 
     const publicKeyBase64 = base64url.encode(Buffer.from(verification.registrationInfo.credentialPublicKey));
 
-    // Efficiently update the user record
     const updatedUser = await User.findOneAndUpdate(
       { _id: user._id },
       {
@@ -152,7 +152,7 @@ router.post('/register', registerLimiter, async (req, res) => {
         },
         $set: {
           biometricEnabled: true,
-          currentChallenge: undefined, // Clear the challenge
+          currentChallenge: undefined,
         },
       },
       { session, new: true }
@@ -168,13 +168,12 @@ router.post('/register', registerLimiter, async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    // Send a secure cookie for the user's email
-    res.cookie('userEmail', sanitizedEmail, {
+    res.cookie('userIdentifier', user.email || user.username, {
       domain: '.himalayanrasa.com',
-      httpOnly: false,  // Set to false because client-side JavaScript needs to access it; otherwise, use true for better security
-      secure: process.env.NODE_ENV === 'production', // Ensure this is true in production
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'Strict',
-      maxAge: 5 * 365 * 24 * 60 * 60 * 1000, // 5 years in milliseconds
+      maxAge: 5 * 365 * 24 * 60 * 60 * 1000, // 5 years
     });
 
     res.status(200).json({ message: 'Biometric registration successful' });
@@ -194,19 +193,21 @@ router.post('/authentication-options', authLimiter, async (req, res) => {
   session.startTransaction();
 
   try {
-    const { email } = req.body;
+    const { identifier } = req.body; // Now using identifier
 
-    if (!email) {
+    if (!identifier) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(400).json({ message: 'Email is required' });
+      return res.status(400).json({ message: 'Email or Username is required' });
     }
 
-    // Decode and trim the email to ensure a clean lookup and prevent errors
-    const sanitizedEmail = decodeURIComponent(email).trim();
+    // Sanitize the identifier (email or username)
+    const sanitizedIdentifier = decodeURIComponent(identifier).trim();
 
-    // Optimize query by using indexed fields and project only needed fields
-    const user = await User.findOne({ email: sanitizedEmail })
+    // Find user by either email or username
+    const user = await User.findOne({
+      $or: [{ email: sanitizedIdentifier }, { username: sanitizedIdentifier }],
+    })
       .select('webauthnCredentials currentChallenge')
       .session(session)
       .exec();
@@ -214,7 +215,7 @@ router.post('/authentication-options', authLimiter, async (req, res) => {
     if (!user) {
       await session.abortTransaction();
       session.endSession();
-      console.log('User not found for email:', sanitizedEmail);
+      console.log('User not found for identifier:', sanitizedIdentifier);
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -255,19 +256,21 @@ router.post('/verify-authentication', authLimiter, async (req, res) => {
   session.startTransaction();
 
   try {
-    const { email, credential } = req.body;
+    const { identifier, credential } = req.body; // Use identifier (email or username)
 
-    if (!email || !credential) {
+    if (!identifier || !credential) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(400).json({ message: 'Email and credential are required' });
+      return res.status(400).json({ message: 'Email/Username and credential are required' });
     }
 
-    // Decode and trim the email to prevent errors and ensure a clean lookup
-    const sanitizedEmail = decodeURIComponent(email).trim();
+    // Sanitize and decode the identifier (either email or username)
+    const sanitizedIdentifier = decodeURIComponent(identifier).trim();
 
-    // Optimize query by using indexed fields and project only needed fields
-    const user = await User.findOne({ email: sanitizedEmail })
+    // Find the user by either email or username
+    const user = await User.findOne({
+      $or: [{ email: sanitizedIdentifier }, { username: sanitizedIdentifier }],
+    })
       .select('webauthnCredentials currentChallenge refreshToken isAdmin')
       .session(session)
       .exec();
@@ -275,7 +278,7 @@ router.post('/verify-authentication', authLimiter, async (req, res) => {
     if (!user) {
       await session.abortTransaction();
       session.endSession();
-      console.log('User not found for email:', sanitizedEmail);
+      console.log('User not found for identifier:', sanitizedIdentifier);
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -285,6 +288,7 @@ router.post('/verify-authentication', authLimiter, async (req, res) => {
       session.endSession();
       return res.status(400).json({ message: 'Authenticator not found' });
     }
+
     const publicKeyBuffer = base64url.toBuffer(authenticator.publicKey);
 
     const verification = await verifyAuthenticationResponse({
@@ -341,13 +345,21 @@ router.post('/verify-authentication', authLimiter, async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
-    res.status(200).json({ token, userId: user._id });
+    res.status(200).json({ 
+      token, 
+      userId: user._id,
+      username: user.username, 
+      email: user.email 
+    });
   } catch (err) {
-    await session.abortTransaction();
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
     session.endSession();
     console.error('Error verifying authentication response:', err);
     res.status(500).json({ message: 'Error verifying authentication response' });
   }
 });
+
 
 module.exports = router;

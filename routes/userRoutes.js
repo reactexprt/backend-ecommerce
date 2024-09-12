@@ -105,7 +105,7 @@ function authenticateToken(req, res, next) {
 
 // Register a new user
 router.post('/register', loginLimiter, [
-  check('username').isLength({ min: 3 }).withMessage('Username must be at least 3 characters long'),
+  check('username').isLength({ min: 5 }).withMessage('Username must be at least 5 characters long'),
   check('email').isEmail().withMessage('Please enter a valid email'),
   check('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
 ], async (req, res) => {
@@ -160,24 +160,28 @@ router.post('/register', loginLimiter, [
   }
 });
 
+// Route to Login
 router.post('/login', loginLimiter, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const { email, password } = req.body;
-    
-    if (!email || !password) {
-      throw new Error('Email and password must be provided');
+    const { identifier, password } = req.body; // 'identifier' can be either username or email
+
+    if (!identifier || !password) {
+      throw new Error('Username/Email and password must be provided');
     }
 
-    // Use findOneAndUpdate to authenticate and update the refreshToken in one step
-    const user = await User.findOne({ email }).select('email password refreshToken biometricEnabled').session(session).exec();
+    // Find the user by either email or username
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { username: identifier }]
+    }).select('username email password refreshToken biometricEnabled').session(session).exec();
 
     if (!user) {
-      throw new Error('Email not found');
+      throw new Error('Username/Email not found');
     }
 
+    // Compare the provided password with the stored hashed password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       throw new Error('Incorrect password');
@@ -206,18 +210,25 @@ router.post('/login', loginLimiter, async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
+    // Set a cookie if biometric is enabled
     if (user.biometricEnabled) {
-      const sanitizedEmail = purify.sanitize(email.trim());
-      res.cookie('userEmail', sanitizedEmail, {
+      const sanitizedEmail = purify.sanitize(user.email.trim());
+      const sanitizedUsername = purify.sanitize(user.username.trim());
+      res.cookie('userIdentifier', sanitizedEmail || sanitizedUsername, {
         domain: '.himalayanrasa.com',
-        httpOnly: false, // Allow access by client-side JavaScript
+        httpOnly: false,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'Strict',
-        maxAge: 5 * 365 * 24 * 60 * 60 * 1000 // 5 years
+        maxAge: 5 * 365 * 24 * 60 * 60 * 1000, // 5 years
       });
     }
 
-    res.status(200).json({ token, userId: user._id });
+    res.status(200).json({ 
+      token, 
+      userId: user._id, 
+      username: user.username, 
+      email: user.email 
+    });
   } catch (error) {
     await session.abortTransaction();
     session.endSession();
@@ -226,6 +237,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   }
 });
 
+// Route for token when access token expires
 router.post('/token', tokenRateLimiter, async (req, res) => {
   const refreshToken = req.cookies.refreshToken;
   if (!refreshToken) {
@@ -389,7 +401,6 @@ router.put('/profile', authenticateToken, async (req, res) => {
   }
 });
 
-
 router.get('/user-details', authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select('-password -refreshToken -resetPasswordOTP -resetPasswordExpires -webauthnCredentials');
@@ -431,16 +442,18 @@ router.post('/enable-biometric', async (req, res) => {
 });
 
 router.get('/biometric-status', tokenRateLimiter, async (req, res) => {
-  const { email } = req.query;
+  const { identifier } = req.query; // Use identifier (email or username)
 
-  // Early return if email is not provided
-  if (!email) {
-    return res.status(400).json({ message: 'Email parameter is required' });
+  // Early return if identifier is not provided
+  if (!identifier) {
+    return res.status(400).json({ message: 'Email or username parameter is required' });
   }
 
   try {
-    // Optimize query by selecting only the needed field
-    const user = await User.findOne({ email }).select('biometricEnabled -_id').lean();
+    // Find the user by either email or username
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { username: identifier }],
+    }).select('biometricEnabled -_id').lean(); // Only fetch biometricEnabled field
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -452,7 +465,6 @@ router.get('/biometric-status', tokenRateLimiter, async (req, res) => {
     res.status(500).json({ message: 'Error fetching biometric status' });
   }
 });
-
 
 
 // ---------------- Reset, Change password and verify otp -------------
