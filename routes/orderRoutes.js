@@ -233,5 +233,32 @@ router.get('/previous', authenticateToken, async (req, res) => {
   }
 });
 
+// @route   GET /api/orders/:orderId
+// @desc    Get details of a specific order
+// @access  Private
+router.get('/:orderId', authenticateToken, async (req, res) => {
+  const { orderId } = req.params;
+
+  try {
+    // Fetch the order with populated product details
+    const order = await Order.findById(orderId).lean()
+    .populate('products.productId', 'name price images')
+    .exec();
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    // Check if the order belongs to the authenticated user
+    if (order.userId.toString() !== req.user.userId.toString()) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    res.status(200).json({ order });
+  } catch (error) {
+    console.error('Error fetching order:', error);
+    res.status(500).json({ error: 'Server Error' });
+  }
+});
 
 module.exports = router;

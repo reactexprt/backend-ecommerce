@@ -173,6 +173,33 @@ router.post('/:productId/comment', authenticateToken, async (req, res) => {
   }
 });
 
+// Route to fetch related products based on category or other criteria
+router.post('/related', authenticateToken, async (req, res) => {
+  const { productIds } = req.body; // Array of product IDs to find similar products
+  try {
+    // Fetch products with similar categories (or tags or attributes)
+    const originalProducts = await Product.find({ _id: { $in: productIds } });
+
+    if (originalProducts.length === 0) {
+      return res.status(404).json({ message: 'Products not found' });
+    }
+
+    // Collect the categories or tags of the original products
+    const categories = originalProducts.map(product => product.category);
+
+    // Find other products in the same category but exclude the original products
+    const relatedProducts = await Product.find({
+      category: { $in: categories },
+      _id: { $nin: productIds } // Exclude the original products
+    }).limit(5); // Limit to a certain number of related products
+
+    res.status(200).json({ products: relatedProducts });
+  } catch (error) {
+    console.error('Error fetching related products:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Create a new product or update one (Admin only)
 router.post(
   '/',
@@ -281,6 +308,5 @@ router.post(
     }
   }
 );
-
 
 module.exports = router;

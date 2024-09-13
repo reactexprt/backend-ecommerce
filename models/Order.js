@@ -22,5 +22,7 @@ const orderSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+orderSchema.index({ userId: 1 });
+
 const Order = mongoose.model('Order', orderSchema);
 module.exports = Order;
