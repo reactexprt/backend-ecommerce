@@ -51,7 +51,9 @@ const corsOptions = {
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(helmet());
-app.use(compression());
+app.use(helmet.frameguard({ action: 'deny' })); // Prevent clickjacking
+app.use(helmet.hsts({ maxAge: 31536000 })); // Enforce HTTPS
+app.use(compression({ threshold: 1024 }));
 // Use cookie-parser middleware
 app.use(cookieParser());
 
@@ -61,18 +63,24 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // Rate limiting
-const limiter = rateLimit({
+const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+  max: 200, // Limit to 200 requests per 15 minutes
 });
-app.use(limiter);
-
+app.use(generalLimiter); 
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.log('MongoDB connection error:', err));
+async function connectWithRetry() {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log('Holla - MongoDB connected. Have fun! Good luck!');
+  } catch (err) {
+    console.error('Oops, MongoDB connection error:', err);
+    setTimeout(connectWithRetry, 5000); // Retry connection after 5 seconds
+  }
+}
 
+connectWithRetry();
 
 // Initialize the Google OAuth2 client for Single Sign-On with Google
 const client = new OAuth2Client(process.env.CLIENT_ID);
@@ -260,26 +268,66 @@ app.use('/api/shops', shopRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/payment', paymentRoutes);
 
-// app.use(
-//   helmet.contentSecurityPolicy({
-//     directives: {
-//       defaultSrc: ["'self'"],
-//       scriptSrc: ["'self'", "https://trusted.cdn.com"],
-//       styleSrc: ["'self'", "'unsafe-inline'"],
-//       imgSrc: ["'self'", "data:", "https://trusted.cdn.com"],
-//       connectSrc: ["'self'", "https://api.yourservice.com"],
-//       frameSrc: ["'self'"],
-//       upgradeInsecureRequests: [],
-//     },
-//   })
-// );
-
+app.use(
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"],  // Allow content from the same origin
+      scriptSrc: [
+        "'self'",               // Allow scripts from the same origin
+        "https://trusted.cdn.com",
+        "https://connect.facebook.net",
+        "https://checkout.razorpay.com",
+        "https://apis.google.com", // Google APIs
+        "https://accounts.google.com", // Google OAuth
+      ],
+      styleSrc: [
+        "'self'",
+        "https://fonts.googleapis.com",
+        "'unsafe-inline'"
+      ],
+      imgSrc: [
+        "'self'",               // Allow images from the same origin
+        "https://*.s3.ap-south-1.amazonaws.com", // Allow images from all AWS S3 bucket URLs
+        "https://himalayanrasa-product-images.s3.ap-south-1.amazonaws.com", // Restrict to your specific bucket
+        "data:",
+        "https://*.googleusercontent.com",
+      ],
+      connectSrc: [
+        "'self'",               // Allow API requests from the same origin
+        "https://api.himalayanrasa.com", 
+        "https://himalayanrasa-product-images.s3.ap-south-1.amazonaws.com",
+        "https://graph.facebook.com",
+        "https://connect.facebook.net",
+        "https://checkout.razorpay.com",
+        "https://www.googleapis.com", // Google API connections
+        "https://accounts.google.com"  // Google OAuth server connections
+      ],
+      frameSrc: [
+        "'self'",
+        "https://checkout.razorpay.com",
+        "https://accounts.google.com",
+        "https://www.facebook.com"
+      ],     // Prevent clickjacking
+      fontSrc: [
+        "'self'",
+        "https://fonts.googleapis.com",
+        "https://fonts.gstatic.com"
+      ],
+      objectSrc: ["'none'"],     // Disallow plugins like Flash
+      upgradeInsecureRequests: [], // Enforce HTTPS
+    },
+  })
+);
 
 // Global Error Handling Middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({ message: err.message });
+  }
   res.status(500).json({ message: 'Something went wrong!' });
 });
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
