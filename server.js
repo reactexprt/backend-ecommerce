@@ -82,6 +82,11 @@ async function connectWithRetry() {
 
 connectWithRetry();
 
+// AWS Beanstalk expects the health check to respond on /
+app.get('/', (req, res) => {
+  res.status(200).send('OK');
+});
+
 // Initialize the Google OAuth2 client for Single Sign-On with Google
 const client = new OAuth2Client(process.env.CLIENT_ID);
 // Rate limiter middleware to prevent abuse of the sign-in endpoint
