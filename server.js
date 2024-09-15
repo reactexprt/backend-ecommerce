@@ -39,8 +39,12 @@ if (!process.env.MONGO_URI || !process.env.JWT_SECRET || !process.env.CLIENT_ID)
 
 const app = express();
 
+let dbConnected= false;
 // Trust the first proxy (Elastic Load Balancer)
 app.set('trust proxy', 1);
+// If your app is behind multiple proxies, you can adjust the argument 
+// accordingly (e.g., app.set('trust proxy', 'loopback') 
+// for local development or app.set('trust proxy', true) to trust all proxies).
 
 const corsOptions = {
   origin: isProduction ? 'https://www.himalayanrasa.com' : 'http://localhost:3000',
@@ -76,18 +80,31 @@ app.use(generalLimiter);
 async function connectWithRetry() {
   try {
     await mongoose.connect(process.env.MONGO_URI);
+    dbConnected = true;
     console.log('Holla - MongoDB connected. Have fun! Good luck!');
   } catch (err) {
+    dbConnected = false;
     console.error('Oops, MongoDB connection error:', err);
     setTimeout(connectWithRetry, 5000); // Retry connection after 5 seconds
   }
 }
-
 connectWithRetry();
 
-// AWS Beanstalk expects the health check to respond on /
+// AWS Beanstalk health check responds on /
 app.get('/', (req, res) => {
-  res.status(200).send('OK');
+  const healthCheck = {
+    status: 'Ok',
+    dbState: dbConnected ? 'connected' : 'disconnected',
+    uptime: process.uptime(),
+    timestamp: Date.now(),
+  };
+
+  // Return 503 if the database is not connected
+  if (!dbConnected) {
+    return res.status(503).json(healthCheck);
+  }
+
+  res.status(200).json(healthCheck);
 });
 
 // Initialize the Google OAuth2 client for Single Sign-On with Google
