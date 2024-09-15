@@ -80,7 +80,7 @@ router.get('/', async (req, res, next) => {
 
     const totalCount = await Product.countDocuments(); // Get the total count of products
     const products = await Product.find()
-      .select('name price description images discountPrice')
+      .select('name price description images discountPrice stock')
       .skip((page - 1) * limit) // Skip the records based on the current page and limit
       .limit(limit) // Limit the number of products returned
       .exec();

@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
 
         // Pagination logic
         const products = await Product.find(searchQuery)
-            .select('name price images description discountPrice')
+            .select('name price images description discountPrice stock')
             .limit(limit * 1)
             .skip((page - 1) * limit);
 
