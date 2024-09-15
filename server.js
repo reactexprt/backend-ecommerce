@@ -39,6 +39,9 @@ if (!process.env.MONGO_URI || !process.env.JWT_SECRET || !process.env.CLIENT_ID)
 
 const app = express();
 
+// Trust the first proxy (Elastic Load Balancer)
+app.set('trust proxy', 1);
+
 const corsOptions = {
   origin: isProduction ? 'https://www.himalayanrasa.com' : 'http://localhost:3000',
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
