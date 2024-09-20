@@ -10,6 +10,7 @@ const orderSchema = new mongoose.Schema({
   ],
   totalAmount: { type: Number, required: true },
   shippingAddress: { type: String, required: true },
+  billingAddress: { type: String, required: true },
   paymentStatus: { 
     type: String, 
     enum: ['Pending', 'Paid', 'Failed'], 
@@ -19,6 +20,11 @@ const orderSchema = new mongoose.Schema({
     type: String, 
     enum: ['Processing', 'Shipped', 'Delivered', 'Cancelled'], 
     default: 'Processing' 
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['COD', 'Prepaid'], 
+    default: 'Prepaid' 
   }
 }, { timestamps: true });
 

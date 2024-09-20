@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const dotenv = require('dotenv');
 const multer = require('multer');
+const sharp = require('sharp');
+const fs = require('fs');
 const expressSanitizer = require('express-sanitizer');
 const path = require('path');
 const { check, validationResult } = require('express-validator');
@@ -43,11 +45,11 @@ const upload = multer({
   }
 });
 
-const uploadToS3 = async (file, category, productName) => {
+const uploadToS3 = async (buffer, file, category, productName, fileName) => {
   const params = {
     Bucket: 'himalayanrasa-product-images', // Replace with your bucket name
-    Key: `uploads/Products/${category}/${productName}/${Date.now()}-${file.originalname}`, // File path in S3
-    Body: file.buffer,
+    Key: `uploads/Products/${category}/${productName}/${Date.now()}-${fileName}.webp`, // Save as webp format
+    Body: buffer,
     ContentType: file.mimetype,
     // ACL: 'public-read' // Remove this line since ACLs are not allowed
   };
@@ -205,12 +207,17 @@ router.post(
   '/',
   [
     upload.array('images', 10), // Allow up to 10 images
+    // Conditionally validate required fields only for new products
     check('name').not().isEmpty().withMessage('Product name is required'),
-    check('price').isFloat({ gt: 0 }).withMessage('Price must be greater than 0'),
-    check('description').not().isEmpty().withMessage('Description is required'),
-    check('category').not().isEmpty().withMessage('Category is required'),
-    check('shop').not().isEmpty().withMessage('Shop is required'), // Ensure shop ID is provided
-    check('synonyms').optional().isString().withMessage('Synonyms must be a comma-separated string') // Validate synonyms
+    check('price').optional({ checkFalsy: true }).isFloat({ gt: 0 }).withMessage('Price must be greater than 0'),
+    check('description').optional({ checkFalsy: true }).not().isEmpty().withMessage('Description is required'),
+    check('category').optional({ checkFalsy: true }).not().isEmpty().withMessage('Category is required'),
+    check('shop').optional({ checkFalsy: true }).not().isEmpty().withMessage('Shop is required'), // Ensure shop ID is provided
+    check('length').optional({ checkFalsy: true }).isFloat({ gt: 0.5 }).withMessage('Length must be greater than 0.5 cm'),
+    check('breadth').optional({ checkFalsy: true }).isFloat({ gt: 0.5 }).withMessage('Breadth must be greater than 0.5 cm'),
+    check('height').optional({ checkFalsy: true }).isFloat({ gt: 0.5 }).withMessage('Height must be greater than 0.5 cm'),
+    check('weight').optional({ checkFalsy: true }).isFloat({ gt: 0.1 }).withMessage('Weight must be greater than 0.1 kg'),
+    check('synonyms').optional({ checkFalsy: true }).isString().withMessage('Synonyms must be a comma-separated string') // Validate synonyms
   ],
   authenticateToken,
   productLimiter, // Apply rate limiting middleware for heavy traffic
@@ -219,54 +226,83 @@ router.post(
       // Check if the user is an admin
       const user = await User.findById(req.user.userId).select('email isAdmin -_id').lean();
       const errors = validationResult(req);
-      if (!errors.isEmpty() || !user.isAdmin) {
+      if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      // Sanitize incoming product data
-      const sanitizedData = {
-        name: req.body.name.trim(),
-        price: parseFloat(req.body.price),
-        description: req.body.description.trim(),
-        category: req.body.category.trim(),
-        discountPrice: parseFloat(req.body.discountPrice),
-        stock: parseInt(req.body.stock, 10),
-        shop: req.body.shop.trim(), // Include shop reference from the request
-      };
+      if (!user.isAdmin) {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
 
-      const { synonyms } = req.body; // Extract synonyms from request body
 
-      // Check if a product with the same name already exists
-      let product = await Product.findOne({ name: sanitizedData.name }).exec();
+      // Extract the product name to check if it exists
+      const productName = req.body.name ? req.body.name.trim() : null;
 
-      // Handle image uploads
-      const imageUploadPromises = req.files.map(file =>
-        uploadToS3(file, req.body.category.trim(), req.body.name.trim())
-      );
-      const uploadedImages = await Promise.all(imageUploadPromises);
-      const imagePaths = uploadedImages.map(data => data.Location);
+      // Find the product by name if provided
+      let product = productName ? await Product.findOne({ name: productName }).exec() : null;
 
+      // If the product exists, handle updates
       if (product) {
-        // Append new images if updating an existing product
-        if (imagePaths.length > 0) {
-          product.images = [...product.images, ...imagePaths];
+        // This is an existing product, so allow partial updates
+
+        // Only update the fields that are provided in the request body
+        if (req.body.price) product.price = parseFloat(req.body.price);
+        if (req.body.description) product.description = req.body.description.trim();
+        if (req.body.category) product.category = req.body.category.trim();
+        if (req.body.discountPrice) product.discountPrice = parseFloat(req.body.discountPrice);
+        if (req.body.stock) product.stock = parseInt(req.body.stock, 10);
+        if (req.body.shop) product.shop = req.body.shop.trim();
+        if (req.body.length) product.length = parseFloat(req.body.length);
+        if (req.body.breadth) product.breadth = parseFloat(req.body.breadth);
+        if (req.body.height) product.height = parseFloat(req.body.height);
+        if (req.body.weight) product.weight = parseFloat(req.body.weight);
+
+        // Handle image uploads if any
+        if (req.files && req.files.length > 0) {
+          const imageUploadPromises = req.files.map(async (file) => {
+            const compressedImageBuffer = await sharp(file.buffer)
+              .webp({ quality: 80 })
+              .toBuffer();
+    
+            const compressedFileName = `${file.originalname.split('.')[0]}`;
+    
+            // Upload the compressed image to S3
+            const uploadResponse = await uploadToS3(compressedImageBuffer, file, req.body.category.trim(), req.body.name.trim(), compressedFileName);
+    
+            return uploadResponse.Location; // Return the S3 URL of the uploaded image
+          });
+    
+          const uploadedImages = await Promise.all(imageUploadPromises);
+          const imagePaths = uploadedImages.map(data => data); 
+          product.images = [...product.images, ...imagePaths]; // Append new images to existing ones
         }
 
-        // Update product details
-        Object.assign(product, sanitizedData);
+        // Update or add synonyms if provided
+        if (req.body.synonyms) {
+          const newSynonyms = req.body.synonyms.split(',').map(s => s.trim().toLowerCase());
 
-        // Save updated product
+          // Fetch existing synonyms from the database
+          const existingSynonym = await Synonym.findOne({ baseTerm: product.name.toLowerCase() });
+
+          if (existingSynonym) {
+            // Merge new synonyms with existing ones (avoiding duplicates)
+            const mergedSynonyms = [...new Set([...existingSynonym.synonyms, ...newSynonyms])];
+            
+            // Update the synonym document
+            existingSynonym.synonyms = mergedSynonyms;
+            await existingSynonym.save();
+          } else {
+            // Create a new synonym entry if it doesn't exist
+            const synonymEntry = new Synonym({
+              baseTerm: product.name.toLowerCase(),
+              synonyms: newSynonyms,
+            });
+            await synonymEntry.save();
+          }
+        }
+
+        // Save the updated product
         const updatedProduct = await product.save();
-
-        // Update synonyms if provided
-        if (synonyms) {
-          const synonymArray = synonyms.split(',').map(s => s.trim().toLowerCase());
-          await Synonym.findOneAndUpdate(
-            { baseTerm: sanitizedData.name.toLowerCase() },
-            { $set: { synonyms: synonymArray } },
-            { upsert: true, new: true }
-          );
-        }
 
         // Cache invalidation for updated product
         productCache.del('product_list');
@@ -274,6 +310,59 @@ router.post(
 
         return res.status(200).json({ message: 'Product updated successfully', product: updatedProduct });
       }
+
+      // If no product exists, this is a new product. Ensure all required fields are present.
+      const requiredFields = ['name', 'price', 'description', 'category', 'shop', 'stock', 'synonyms', 'length', 'breadth', 'height', 'weight' ];
+      const missingFields = requiredFields.filter(field => !req.body[field]);
+
+      if (missingFields.length > 0) {
+        return res.status(400).json({
+          message: `Missing required fields: ${missingFields.join(', ')}`
+        });
+      }
+
+      if (!req.files || req.files?.length === 0) {
+        return res.status(400).json({ message: 'At least one image is required for a new product.' });
+      }
+
+      // Handle image uploads for new product
+      const imageUploadPromises = req.files?.map(async (file) => {
+        const compressedImageBuffer = await sharp(file.buffer)
+          .webp({ quality: 80 })
+          .toBuffer();
+
+        const compressedFileName = `${file.originalname.split('.')[0]}`;
+
+        // Upload the compressed image to S3
+        const uploadResponse = await uploadToS3(compressedImageBuffer, file, req.body.category.trim(), req.body.name.trim(), compressedFileName);
+
+        return uploadResponse.Location; // Return the S3 URL of the uploaded image
+      });
+
+      const uploadedImages = await Promise.all(imageUploadPromises);
+      const imagePaths = uploadedImages.map(data => data);
+
+      // Generate a SKU based on product name and a random number (or any other logic)
+      const productNameForSKUKey = productName?.toUpperCase();
+      const abbreviation = productNameForSKUKey?.substring(0, 4);
+      const randomString = crypto.randomBytes(2).toString('hex').toUpperCase();
+      const sku = `${abbreviation}-${randomString}`;
+
+      // Sanitize and parse incoming product data after validation
+      const sanitizedData = {
+        name: req.body.name.trim(),
+        price: parseFloat(req.body.price),
+        description: req.body.description.trim(),
+        category: req.body.category.trim(),
+        discountPrice: req.body.discountPrice ? parseFloat(req.body.discountPrice) : null, // Optional field
+        stock: req.body.stock ? parseInt(req.body.stock, 10) : 0, // Default to 0 if not provided
+        length: req.body.length ? parseFloat(req.body.length) : null,
+        breadth: req.body.breadth ? parseFloat(req.body.breadth) : null,
+        height: req.body.height ? parseFloat(req.body.height) : null,
+        weight: req.body.weight ? parseFloat(req.body.weight) : null,
+        shop: req.body.shop.trim(),
+        sku: sku
+      };
 
       // Create new product if not found
       const newProduct = new Product({
@@ -285,10 +374,10 @@ router.post(
       const savedProduct = await newProduct.save();
 
       // Save synonyms if provided
-      if (synonyms) {
-        const synonymArray = synonyms.split(',').map(s => s.trim().toLowerCase());
+      if (req.body.synonyms) {
+        const synonymArray = req.body.synonyms.split(',').map(s => s.trim().toLowerCase());
         const synonymEntry = new Synonym({
-          baseTerm: sanitizedData.name.toLowerCase(),
+          baseTerm: savedProduct.name.toLowerCase(),
           synonyms: synonymArray,
         });
         await synonymEntry.save();

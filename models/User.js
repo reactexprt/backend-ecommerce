@@ -19,6 +19,8 @@ const addressSchema = new mongoose.Schema({
   country: { type: String, required: true },
   phoneNumber: { type: String, required: true },
   isDefault: { type: Boolean, default: false },
+  isBillingAddress: { type: Boolean, default: false },
+  isShippingAddress: { type: Boolean, default: false }
 });
 
 const userSchema = new mongoose.Schema({

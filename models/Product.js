@@ -21,6 +21,11 @@ const productSchema = new mongoose.Schema({
   images: { type: [String] }, // Array of image URLs
   category: { type: String },
   stock: { type: Number, default: 0, min: 0 },
+  length: { type: Number, required: true, min: 0.5 },
+  breadth: { type: Number, required: true, min: 0.5 },
+  height: { type: Number, required: true, min: 0.5 },
+  weight: { type: Number, required: true, min: 0.1 },
+  sku: { type: String, required: true, unique: true }, // Add SKU as a unique field
   ratings: [ratingSchema],
   averageRating: { type: Number, default: 0 },
   comments: [commentSchema],

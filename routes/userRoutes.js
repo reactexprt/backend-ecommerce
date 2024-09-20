@@ -241,7 +241,7 @@ router.post('/login', loginLimiter, async (req, res) => {
 router.post('/token', tokenRateLimiter, async (req, res) => {
   const refreshToken = req.cookies.refreshToken;
   if (!refreshToken) {
-    return res.status(401).json({ message: 'Refresh token is required.' });
+    return res.status(403).json({ message: 'Refresh token is required.' });
   }
 
   const session = await mongoose.startSession();

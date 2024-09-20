@@ -302,6 +302,7 @@ app.use(
         "https://trusted.cdn.com",
         "https://connect.facebook.net",
         "https://checkout.razorpay.com",
+        "https://apiv2.shiprocket.in",
         "https://apis.google.com", // Google APIs
         "https://accounts.google.com", // Google OAuth
       ],
