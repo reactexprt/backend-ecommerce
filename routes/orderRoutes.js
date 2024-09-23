@@ -90,7 +90,7 @@ function calculateCourierScore(courier) {
     score += courier.pickup_performance * 10;
   }
 
-  // COD availability
+  // COD availability // TODO --> what if user selected online payment
   if (courier.cod === 1) {
     score += 5;
   }
@@ -214,7 +214,7 @@ async function createShiprocketOrder(user, order, products, billingAddress, ship
   const orderDetails = {
     order_id: order._id, // Use your own order ID
     order_date: new Date().toISOString(),
-    pickup_location: 'Gautam Buddha Nagar',
+    pickup_location: 'home',
     billing_customer_name: `${billingAddress.firstName}`,
     billing_last_name: `${billingAddress.lastName}`,
     billing_address: `${billingAddress.flat}, ${billingAddress.street}`,
@@ -286,14 +286,14 @@ async function createShiprocketOrder(user, order, products, billingAddress, ship
     }
   });
 
-  console.log(orderResponse.data, 'orderResponse & assignCourierResponse', assignCourierResponse).data;
+  console.log(orderResponse.data, 'orderResponse & assignCourierResponse', assignCourierResponse.data);
 
   const { awb_code, courier_name } = assignCourierResponse.data; // Extract AWB and Courier name
 
   // Step 3: Generate Pickup Request
   // const pickupResponse = await axios.post('https://apiv2.shiprocket.in/v1/external/courier/generate/pickup', {
   //   shipment_id: [shipment_id],
-  //   pickup_location: 'Noida' // Use your pickup location here
+  //   pickup_location: 'home' // Use your pickup location here
   // }, {
   //   headers: {
   //     Authorization: `Bearer ${token}`
@@ -421,7 +421,7 @@ router.post('/order', [authenticateToken, orderLimiter], async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    res.status(200).json({ message: 'Order confirmed', order });
+    res.status(200).json({ message: 'Order confirmed and saved' });
   } catch (error) {
     if (session.inTransaction()) {
       await session.abortTransaction();

@@ -324,6 +324,7 @@ app.use(
         "https://himalayanrasa-product-images.s3.ap-south-1.amazonaws.com",
         "https://graph.facebook.com",
         "https://connect.facebook.net",
+        "https://apiv2.shiprocket.in",
         "https://checkout.razorpay.com",
         "https://www.googleapis.com", // Google API connections
         "https://accounts.google.com"  // Google OAuth server connections
